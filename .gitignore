@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local Development & Secrets
+prusa_tokens.json
+login_page.html
+main.js
+data/
+.idea/
+.vscode/
+.DS_Store
