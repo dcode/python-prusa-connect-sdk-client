@@ -1,5 +1,3 @@
-import importlib.metadata
-
 from .client import PrusaConnectClient
 from .exceptions import (
     PrusaApiError,
@@ -21,8 +19,7 @@ from .models import (
     Team,
     Temperatures,
 )
-
-__version__ = importlib.metadata.version("prusa-connect")
+from .__version__ import __version__
 
 __all__ = [
     "PrusaConnectClient",

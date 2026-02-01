@@ -15,7 +15,7 @@ from prusa_connect.exceptions import (
     PrusaNetworkError,
 )
 from prusa_connect.models import Camera, File, Job, Printer, Team
-from .__version__ import __version__
+from prusa_connect.__version__ import __version__
 
 __all__ = ["PrusaConnectClient", "AuthStrategy"]
 
