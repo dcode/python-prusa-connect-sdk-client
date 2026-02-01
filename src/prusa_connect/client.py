@@ -13,6 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 from prusa_connect.__version__ import __version__
+from prusa_connect.auth import PrusaConnectCredentials
 from prusa_connect.exceptions import (
     PrusaApiError,
     PrusaAuthError,
@@ -62,7 +63,7 @@ class PrusaConnectClient:
 
     def __init__(
         self,
-        credentials: AuthStrategy,
+        credentials: AuthStrategy | None = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
@@ -70,11 +71,21 @@ class PrusaConnectClient:
 
         Args:
             credentials: An object adhering to the `AuthStrategy` protocol.
-                         (e.g. `PrusaConnectCredentials`)
+                         If None, attempts to load from environment or 'prusa_tokens.json'.
             base_url: Optional override for the API endpoint.
             timeout: Default timeout for API requests in seconds.
         """
         self._base_url = base_url.rstrip("/")
+
+        if credentials is None:
+            credentials = PrusaConnectCredentials.load_default()
+
+        if credentials is None:
+            raise PrusaAuthError(
+                "No credentials provided and none found in default locations. "
+                "Please login via CLI (`prusactl list-printers`) or provide credentials explicitly."
+            )
+
         self._credentials = credentials
         self._timeout = timeout
         self._session = requests.Session()

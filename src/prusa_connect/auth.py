@@ -261,8 +261,11 @@ class PrusaConnectCredentials:
         headers["Authorization"] = f"Bearer {self.tokens.access_token.raw_token}"
 
     @classmethod
-    def from_file(cls, path: Path) -> "PrusaConnectCredentials | None":
+    def from_file(cls, path: Path | str) -> "PrusaConnectCredentials | None":
         """Factory: Load credentials from a JSON file."""
+        if isinstance(path, str):
+            path = Path(path)
+
         try:
             logger.debug(f"Loading credentials from {path}")
             with path.open() as f:
@@ -278,6 +281,48 @@ class PrusaConnectCredentials:
         except (FileNotFoundError, json.JSONDecodeError):
             logger.info(f"No credentials found at {path.absolute()}")
             return None
+
+    @classmethod
+    def from_env(cls) -> "PrusaConnectCredentials | None":
+        """Factory: Load credentials from environment variables.
+
+        Checks:
+        1. PRUSA_TOKENS_JSON: A JSON string containing the full token set.
+        2. PRUSA_TOKEN: A raw Access Token (JWT).
+        """
+        if json_str := os.environ.get("PRUSA_TOKENS_JSON"):
+            try:
+                return cls(json.loads(json_str))
+            except json.JSONDecodeError:
+                logger.warning("Invalid JSON in PRUSA_TOKENS_JSON")
+
+        if token := os.environ.get("PRUSA_TOKEN"):
+            try:
+                # Pydantic will attempt to parse the string into the AccessToken model
+                return cls({"access_token": token})
+            except Exception as e:
+                logger.debug(f"Could not create credentials from PRUSA_TOKEN: {e}")
+
+        return None
+
+    @classmethod
+    def load_default(cls) -> "PrusaConnectCredentials | None":
+        """Factory: Attempt to load credentials from default locations.
+
+        Priority:
+        1. Environment Variables (PRUSA_TOKENS_JSON, PRUSA_TOKEN)
+        2. Local file 'prusa_tokens.json'
+        """
+        # 1. Environment
+        if creds := cls.from_env():
+            return creds
+
+        # 2. Default file
+        default_path = Path("prusa_tokens.json")
+        if default_path.exists():
+            return cls.from_file(default_path)
+
+        return None
 
 
 # --- PKCE & Login Flow Helpers ---
