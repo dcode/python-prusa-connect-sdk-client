@@ -5,21 +5,20 @@ It provides a Credentials object that can automatically refresh tokens
 and attach headers to requests.
 """
 
-from datetime import timedelta
 import base64
 import hashlib
 import json
 import os
 import re
 import urllib.parse
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import Callable, MutableMapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import requests
 import structlog
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 from prusa_connect import __version__
 from prusa_connect.exceptions import PrusaAuthError
@@ -33,18 +32,24 @@ CLIENT_ID = "MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4"
 REDIRECT_URI = "https://connect.prusa3d.com/login/auth-callback"
 
 
-
 def _decode_jwt(token: str) -> dict[str, Any]:
-    """Decodes a JWT token.
+    """Simple decode of a JWT token.
+
+    This is explicitly NOT intended to validate the token,
+    but rather to parse the claims into a dictionary.
 
     Args:
         token: The JWT token to decode.
-    
+
     Returns:
         A dictionary containing the decoded token.
     """
     # Split the token into header, payload, and signature
-    _, payload, _ = token.split(".")
+    _header, payload, _signature = token.split(".")
+
+    logger.debug(f"Token header: {base64.b64decode(_header + '==').decode('utf-8')}")
+    logger.debug(f"Token payload: {base64.b64decode(payload + '==').decode('utf-8')}")
+    logger.debug(f"Token signature: {_signature}")
 
     # Decode the payload, adding padding if necessary
     token_payload_decoded = str(base64.b64decode(payload + "=="), "utf-8")
@@ -57,7 +62,6 @@ class PrusaJwtModel(BaseModel):
     """Base model for JWT-based tokens that can parse raw strings."""
 
     raw_token: str | None = Field(default=None, exclude=True)
-
 
     @model_validator(mode="before")
     @classmethod
@@ -90,7 +94,10 @@ class PrusaJwtModel(BaseModel):
                 pass
         super().__init__(**data)
 
+
 class PrusaAccessToken(PrusaJwtModel):
+    """Structure of the Access Token."""
+
     token_id: str = Field(alias="jti")
     user_id: int = Field(alias="sub")
     expires_at: datetime = Field(alias="exp")
@@ -99,7 +106,10 @@ class PrusaAccessToken(PrusaJwtModel):
     token_type: str = Field(alias="type")
     connect_id: str
 
+
 class PrusaRefreshToken(PrusaJwtModel):
+    """Structure of the Refresh Token."""
+
     token_id: str = Field(alias="jti")
     user_id: int = Field(alias="sub")
     expires_at: datetime = Field(alias="exp")
@@ -107,7 +117,10 @@ class PrusaRefreshToken(PrusaJwtModel):
     app_slug: str = Field(alias="app")
     token_type: str = Field(alias="type")
 
+
 class PrusaIdentityToken(PrusaJwtModel):
+    """Structure of the Identity Token."""
+
     token_id: str = Field(alias="jti")
     user_id: int = Field(alias="sub")
     expires_at: datetime = Field(alias="exp")
@@ -116,32 +129,43 @@ class PrusaIdentityToken(PrusaJwtModel):
     issuer: str = Field(alias="iss")
 
 
-
 class PrusaJWTTokenSet(BaseModel):
     """JWT token data structure."""
 
     access_token: PrusaAccessToken
     refresh_token: PrusaRefreshToken | None = None
-    identity_token: PrusaIdentityToken | None = None
+    identity_token: Annotated[PrusaIdentityToken | None, Field(alias="id_token")] = None
+    expires_in: int | None = None
+    token_type: str | None = None
+    scope: Annotated[
+        list[str], Field(default_factory=list), BeforeValidator(lambda v: v.split() if isinstance(v, str) else v)
+    ]
+    shared_session_key: str | None = None
 
-    def dump_tokens(self) -> dict[str, str]:
+    def dump_tokens(self) -> dict[str, Any]:
         """Returns the raw tokens as a dictionary, suitable for saving to disk."""
-        data = {}
+        data: dict[str, Any] = {}
         if self.access_token and self.access_token.raw_token:
             data["access_token"] = self.access_token.raw_token
         if self.refresh_token and self.refresh_token.raw_token:
             data["refresh_token"] = self.refresh_token.raw_token
         if self.identity_token and self.identity_token.raw_token:
             data["id_token"] = self.identity_token.raw_token
+        if self.expires_in is not None:
+            data["expires_in"] = self.expires_in
+        if self.token_type is not None:
+            data["token_type"] = self.token_type
+        if self.scope:
+            data["scope"] = " ".join(self.scope)
+        if self.shared_session_key is not None:
+            data["shared_session_key"] = self.shared_session_key
         return data
+
 
 def _is_token_valid(token: PrusaAccessToken | PrusaRefreshToken | PrusaIdentityToken) -> bool:
     """Checks if the token is valid (will not expire within 30 seconds)."""
     expires_at = token.expires_at
-    if expires_at.tzinfo is None:
-        now = datetime.now()
-    else:
-        now = datetime.now(UTC)
+    now = datetime.now() if expires_at.tzinfo is None else datetime.now(UTC)
     logger.debug(
         "Checking token validity",
         token_type=type(token),
@@ -151,6 +175,7 @@ def _is_token_valid(token: PrusaAccessToken | PrusaRefreshToken | PrusaIdentityT
     )
     return (expires_at - now) > timedelta(seconds=30)
 
+
 class PrusaConnectCredentials:
     """Authentication credentials that allow making authorized API calls.
 
@@ -158,10 +183,14 @@ class PrusaConnectCredentials:
     automatic refreshing when expired.
     """
 
-    def __init__(self, token_info: dict[str, Any] | PrusaJWTTokenSet, token_saver: Callable[[dict], None] | None = None):
-        """Args:
-        token_info: Dictionary or PrusaJWTTokenSet containing access_token, etc.
-        token_saver: Optional callback executed when tokens are refreshed (to save to disk).
+    def __init__(
+        self, token_info: dict[str, Any] | PrusaJWTTokenSet, token_saver: Callable[[dict], None] | None = None
+    ):
+        """Initialize credentials.
+
+        Args:
+            token_info: Dictionary or PrusaJWTTokenSet containing access_token, etc.
+            token_saver: Optional callback executed when tokens are refreshed (to save to disk).
         """
         self._load_tokens(token_info)
         self.token_saver = token_saver
@@ -221,7 +250,7 @@ class PrusaConnectCredentials:
             logger.error("Token refresh failed", status=resp.status_code, body=resp.text)
             raise PrusaAuthError("Failed to refresh token. Re-authentication required.")
 
-    def before_request(self, headers: dict[str, str]) -> None:
+    def before_request(self, headers: MutableMapping[str, str | bytes]) -> None:
         """Injects the Authorization header into the request headers.
 
         Refreshes the token automatically if needed.
@@ -293,6 +322,7 @@ def interactive_login(email: str, password: str, otp_callback: Callable[[], str]
     }
 
     logger.info("Initiating login flow...")
+    logger.debug("Login params", url=AUTH_URL, params=params)
     resp = session.get(AUTH_URL, params=params)
     if resp.status_code != 200:
         raise PrusaAuthError(f"Could not load login page (Status: {resp.status_code})")
@@ -345,6 +375,9 @@ def interactive_login(email: str, password: str, otp_callback: Callable[[], str]
 
     if token_resp.status_code != 200:
         raise PrusaAuthError(f"Token exchange failed: {token_resp.text}")
+
+    logger.info("Token exchange successful.")
+    logger.debug("Token response", json=token_resp.json())
 
     return PrusaJWTTokenSet(**token_resp.json())
 

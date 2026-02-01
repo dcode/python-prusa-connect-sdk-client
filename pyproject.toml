@@ -1,22 +1,55 @@
 [project]
 name = "prusa-connect"
 dynamic = ["version"]
-description = "Prusa Connect CLI and API client"
+description = "Unoriginal Prusa Connect API client for Python and CLI"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+  { name = "Derek Ditch", email = "dcode@users.noreply.github.com"}
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = [
+  "prusa",
+  "connect",
+  "api",
+  "client",
+  "3d-printing",
+  "iot"
+]
 dependencies = [
     "requests>=2.32.5",
     "structlog>=25.5.0",
     "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0", # Required for config.py
 ]
 
+[project.license]
+text = "AGPL-3.0-or-later"
+
+[project.urls]
+Documentation = "https://github.com/dcode/python-prusa-connect/#readme"
+Homepage = "https://github.com/dcode/python-prusa-connect"
+Issues = "https://github.com/dcode/python-prusa-connect/issues"
+Repository = "https://github.com/dcode/python-prusa-connect"
+
 [project.optional-dependencies]
+all = [
+    "prusa-connect[cli]",
+]
+
 # Users must run: pip install "prusa-connect[cli]"
 cli = [
     "cyclopts>=2.0.0",
     "rich>=14.3.1",
     "better-exceptions>=0.3.3",
+    "pydantic-settings>=2.0.0",
 ]
 
 [project.scripts]
@@ -53,10 +86,7 @@ typecheck = "pyright"
 
 [tool.hatch.envs.default]
 installer = "uv"
-
-[tool.hatch.envs.default.env-vars]
-UV_DEFAULT_INDEX = "https://pypi.org/simple/"
-
+env-vars = { "UV_DEFAULT_INDEX" = "https://pypi.org/simple/" }
 
 [tool.ruff]
 target-version = "py313"

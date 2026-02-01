@@ -1,3 +1,9 @@
+"""Pydantic models for Prusa Connect API responses.
+
+This module defines the data structures used by the client to parse
+API responses into typed objects.
+"""
+
 from enum import StrEnum
 from typing import Any
 
@@ -20,6 +26,8 @@ __all__ = [
 
 
 class PrinterState(StrEnum):
+    """Enum representing the possible states of a printer."""
+
     IDLE = "IDLE"
     PRINTING = "PRINTING"
     ATTENTION = "ATTENTION"
@@ -38,6 +46,8 @@ class PrinterState(StrEnum):
 
 
 class SourceInfo(BaseModel):
+    """Information about the source of an action or object (e.g., user)."""
+
     id: int | None = None
     first_name: str | None = None
     last_name: str | None = None
@@ -46,16 +56,22 @@ class SourceInfo(BaseModel):
 
 
 class Owner(SourceInfo):
+    """Represents the owner of a resource (same fields as SourceInfo)."""
+
     pass
 
 
 class SyncInfo(BaseModel):
+    """Synchronization details for a resource."""
+
     synced_by: dict[str, Any] | None = None
     synced: int | None = None
     source: str | None = None
 
 
 class FileMeta(BaseModel):
+    """Metadata associated with a file (e.g., print statistics)."""
+
     model_config = ConfigDict(extra="allow")
 
     filament_cost: float | None = None
@@ -117,6 +133,8 @@ class Job(BaseModel):
 
 
 class Temperatures(BaseModel):
+    """Printer temperatures."""
+
     temp_nozzle: float | None = None
     temp_bed: float | None = None
     target_nozzle: float | None = None
@@ -124,6 +142,8 @@ class Temperatures(BaseModel):
 
 
 class Camera(BaseModel):
+    """Camera information."""
+
     id: int | None = None  # Numeric ID for snapshots
     token: str | None = None  # Alphanumeric token/id in some contexts?
     name: str | None = None
@@ -133,6 +153,8 @@ class Camera(BaseModel):
 
 
 class Team(BaseModel):
+    """Team information."""
+
     id: int
     name: str
     role: str | None = None
@@ -140,6 +162,7 @@ class Team(BaseModel):
 
 class Printer(BaseModel):
     """Detailed Printer Object.
+
     Matches structure in `printers.error.response.json` and `printer_details.json`.
     """
 
@@ -166,4 +189,6 @@ class Printer(BaseModel):
 
 
 class PrinterListResponse(BaseModel):
+    """Response model for the /printers endpoint."""
+
     printers: list[Printer]

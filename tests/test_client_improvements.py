@@ -1,6 +1,7 @@
 from unittest import mock
 
 import pytest
+
 import prusa_connect
 from prusa_connect import PrusaConnectClient
 from prusa_connect.client import AuthStrategy
@@ -24,13 +25,14 @@ def test_default_timeout(client):
         mock_response.status_code = 200
         mock_response.json.return_value = {}
         mock_response.content = b"{}"
+        mock_response.headers = {}  # Mock headers as a real dict
         mock_request.return_value = mock_response
 
         client.get_printers()
 
         mock_request.assert_called()
         # Check that timeout=30.0 was passed
-        args, kwargs = mock_request.call_args
+        _args, kwargs = mock_request.call_args
         assert kwargs["timeout"] == 30.0
 
 
@@ -42,11 +44,12 @@ def test_custom_timeout():
         mock_response.status_code = 200
         mock_response.json.return_value = {}
         mock_response.content = b"{}"
+        mock_response.headers = {}
         mock_request.return_value = mock_response
 
         client.get_printers()
 
-        args, kwargs = mock_request.call_args
+        _args, kwargs = mock_request.call_args
         assert kwargs["timeout"] == 10.0
 
 
@@ -57,11 +60,12 @@ def test_override_timeout(client):
         mock_response.status_code = 200
         mock_response.json.return_value = {}
         mock_response.content = b"{}"
+        mock_response.headers = {}
         mock_request.return_value = mock_response
 
         client.api_request("GET", "/test", timeout=5.0)
 
-        args, kwargs = mock_request.call_args
+        _args, kwargs = mock_request.call_args
         assert kwargs["timeout"] == 5.0
 
 

@@ -1,23 +1,26 @@
 """Prusa Connect REST API Client.
 
 This module provides a high-level interface to interact with the Prusa Connect API,
-handling authentication, error parsing, and response validation.
+handling authentication, error parsing, connection pooling, and response validation.
 """
 
+from collections.abc import MutableMapping
 from typing import Any, Protocol
 
 import requests
 import structlog
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
+from prusa_connect.__version__ import __version__
 from prusa_connect.exceptions import (
     PrusaApiError,
     PrusaAuthError,
     PrusaNetworkError,
 )
 from prusa_connect.models import Camera, File, Job, Printer, Team
-from prusa_connect.__version__ import __version__
 
-__all__ = ["PrusaConnectClient", "AuthStrategy"]
+__all__ = ["AuthStrategy", "PrusaConnectClient"]
 
 logger = structlog.get_logger()
 
@@ -28,17 +31,23 @@ DEFAULT_TIMEOUT = 30.0
 class AuthStrategy(Protocol):
     """Protocol defining how authentication credentials behave."""
 
-    def before_request(self, headers: dict[str, str]) -> None:
+    def before_request(self, headers: MutableMapping[str, str | bytes]) -> None:
         """Inject credentials into the request headers.
 
         This method is called immediately before every request.
         Implementations can check token expiry and refresh if needed here.
+
+        Args:
+            headers: The dictionary of headers to modify in-place.
         """
         ...
 
 
 class PrusaConnectClient:
     """Client for the Prusa Connect API.
+
+    This client handles the lower-level details of making HTTP requests,
+    including authentication injection, error handling, and retries.
 
     Attributes:
         token: The API Bearer token.
@@ -60,8 +69,8 @@ class PrusaConnectClient:
         """Initializes the client.
 
         Args:
-            credentials: An object adhering to the AuthStrategy protocol.
-                         (e.g. PrusaConnectCredentials)
+            credentials: An object adhering to the `AuthStrategy` protocol.
+                         (e.g. `PrusaConnectCredentials`)
             base_url: Optional override for the API endpoint.
             timeout: Default timeout for API requests in seconds.
         """
@@ -69,6 +78,18 @@ class PrusaConnectClient:
         self._credentials = credentials
         self._timeout = timeout
         self._session = requests.Session()
+
+        # Configure Retries
+        retries = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods={"GET", "POST", "PUT", "DELETE", "PATCH"},
+        )
+        adapter = HTTPAdapter(max_retries=retries)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
+
         self._session.headers.update(
             {
                 "User-Agent": f"prusa-connect-python/{__version__}",
@@ -86,7 +107,7 @@ class PrusaConnectClient:
             **kwargs: Additional arguments passed to requests.request (e.g., timeout).
 
         Returns:
-            The parsed JSON response, or the Requests Response object if raw=True.
+            The parsed JSON response (dict or list), or the Requests Response object if raw=True.
 
         Raises:
             PrusaAuthError: On 401/403.
@@ -102,22 +123,39 @@ class PrusaConnectClient:
 
         try:
             logger.debug("API Request", method=method, url=url)
+            # Check for stream in kwargs before request
+            is_stream = kwargs.get("stream", False)
             response = self._session.request(method, url, **kwargs)
+
+            # Avoid reading content if streaming
+            body_len = "STREAM" if is_stream else len(response.content)
+
             logger.debug(
                 "API Response",
                 status_code=response.status_code,
-                headers=response.headers,
-                body_len=len(response.content),
+                headers=dict(response.headers),
+                body_len=body_len,
             )
 
             if response.status_code in (401, 403):
                 raise PrusaAuthError("Invalid or expired credentials.")
 
             if response.status_code >= 400:
+                # For error responses, we might want to read content even if streaming?
+                # Usually APIs return small JSON errors.
+                # If we are streaming a big download and fail, we probably want the error text.
+                # safely read a bit
+                try:
+                    # Peek or read a limited amount if possible, or just read text if not too huge
+                    # If it's an error, it's likely not the huge binary we expected.
+                    error_text = response.text[:500]
+                except Exception:
+                    error_text = "<could not read error body>"
+
                 raise PrusaApiError(
                     message=f"Request failed: {response.reason}",
                     status_code=response.status_code,
-                    response_body=response.text[:500],
+                    response_body=error_text,
                 )
 
             if response.status_code == 204:
@@ -135,11 +173,17 @@ class PrusaConnectClient:
     def api_request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
         """Public wrapper for making raw authenticated requests.
 
+        This method allows access to endpoints that may not yet be covered by specific
+        methods in this client.
+
         Args:
             method: HTTP method (e.g. "GET", "POST").
             endpoint: API endpoint (e.g. "/printers").
             **kwargs: Arbitrary keyword arguments passed to the underlying
                 `requests.request` call (e.g. `json`, `data`, `timeout`).
+
+        Returns:
+            The parsed JSON response.
 
         Usage Example:
             >>> response = client.api_request("GET", "/printers")
@@ -151,7 +195,7 @@ class PrusaConnectClient:
         """Fetch all printers associated with the account.
 
         Returns:
-            A list of Printer objects.
+            A list of `Printer` objects.
 
         Usage Example:
             >>> printers = client.get_printers()
@@ -177,7 +221,7 @@ class PrusaConnectClient:
             uuid: The UUID of the printer.
 
         Returns:
-            A Printer object.
+            A `Printer` object containing detailed telemetry and state.
 
         Usage Example:
             >>> printer = client.get_printer("c0ffee-uuid")
@@ -193,7 +237,7 @@ class PrusaConnectClient:
             team_id: The team ID to fetch files for.
 
         Returns:
-            A list of File objects.
+            A list of `File` objects.
 
         Usage Example:
             >>> files = client.get_file_list(team_id=123)
@@ -212,7 +256,7 @@ class PrusaConnectClient:
         """Fetch all cameras.
 
         Returns:
-            A list of Camera objects.
+            A list of `Camera` objects.
 
         Usage Example:
             >>> cameras = client.get_cameras()
@@ -228,7 +272,7 @@ class PrusaConnectClient:
         """Fetch all teams the user belongs to.
 
         Returns:
-            A list of Team objects.
+            A list of `Team` objects.
 
         Usage Example:
             >>> teams = client.get_teams()
@@ -246,7 +290,7 @@ class PrusaConnectClient:
             team_id: The team ID.
 
         Returns:
-            A list of Job objects.
+            A list of `Job` objects.
 
         Usage Example:
             >>> jobs = client.get_team_jobs(team_id=123)
@@ -264,7 +308,7 @@ class PrusaConnectClient:
             printer_uuid: The printer UUID.
 
         Returns:
-            A list of Job objects.
+            A list of `Job` objects.
 
         Usage Example:
             >>> jobs = client.get_printer_jobs("printer-uuid")
@@ -285,7 +329,7 @@ class PrusaConnectClient:
             kwargs: Optional arguments for the command.
 
         Returns:
-            True if successful.
+            True if the command was successfully sent.
 
         Usage Example:
             >>> client.send_command("printer-uuid", "PAUSE_PRINT")
@@ -323,7 +367,7 @@ class PrusaConnectClient:
             camera_token: The camera token (alphanumeric).
 
         Returns:
-            True if triggered.
+            True if triggered successfully.
 
         Usage Example:
             >>> client.trigger_snapshot("camera-token-xyz")

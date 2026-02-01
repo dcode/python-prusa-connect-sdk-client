@@ -7,22 +7,29 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 import better_exceptions
-import cyclopts
-import requests
 import structlog
-from rich import print as rprint
-from rich.console import Console
-from rich.table import Table
-from structlog.typing import Processor
 
 from prusa_connect.__version__ import __version__
 from prusa_connect.auth import PrusaConnectCredentials, interactive_login
+from prusa_connect.cli_config import settings
 from prusa_connect.client import PrusaConnectClient
-from prusa_connect.config import settings
 from prusa_connect.exceptions import PrusaAuthError, PrusaConnectError
+
+try:
+    import cyclopts
+    from rich import print as rprint
+    from rich.console import Console
+    from rich.table import Table
+except ImportError as err:
+    raise ImportError(
+        "The 'cli' extra is required for this feature. Install it with: pip install prusa-connect[cli]"
+    ) from err
+
+if TYPE_CHECKING:
+    from structlog.typing import Processor
 
 # Setup
 better_exceptions.hook()
@@ -102,7 +109,7 @@ def get_client() -> PrusaConnectClient:
                 with open(settings.tokens_file, "w") as f:
                     json.dump(data, f, indent=2)
 
-            save_tokens(token_data)
+            save_tokens(token_data.dump_tokens())
             creds = PrusaConnectCredentials(token_data, token_saver=save_tokens)
             rprint("[green]Authentication successful![/green]")
 
@@ -118,7 +125,7 @@ def get_client() -> PrusaConnectClient:
 
 @app.command(name="list-printers")
 def list_printers(
-    filter: Annotated[str, cyclopts.Parameter(name="filter", help="Glob pattern to filter names")] = "*",
+    pattern: Annotated[str, cyclopts.Parameter(name="pattern", help="Glob pattern to filter names")] = "*",
     verbose: Annotated[bool, cyclopts.Parameter(name=["--verbose", "-v"])] = False,
 ):
     """List all printers associated with the account."""
@@ -149,11 +156,11 @@ def list_printers(
 
 @app.default
 def default_action(
-    filter: Annotated[str, cyclopts.Parameter(name="filter", help="Glob pattern to filter names")] = "*",
+    pattern: Annotated[str, cyclopts.Parameter(name="pattern", help="Glob pattern to filter names")] = "*",
     verbose: Annotated[bool, cyclopts.Parameter(name=["--verbose", "-v"])] = False,
 ):
     """Default action (alias for list-printers)."""
-    list_printers(filter=filter, verbose=verbose)
+    list_printers(filter=pattern, verbose=verbose)
 
 
 @app.command(name="show")
@@ -365,6 +372,7 @@ def api(
     method: Annotated[str, cyclopts.Parameter(help="HTTP Method")] = "GET",
     data: Annotated[str | None, cyclopts.Parameter(help="JSON data body")] = None,
     output: Annotated[Path | None, cyclopts.Parameter(help="Output file for response")] = None,
+    stream: Annotated[bool, cyclopts.Parameter(help="Stream response (useful for large files)")] = False,
     verbose: Annotated[bool, cyclopts.Parameter(name=["--verbose", "-v"])] = False,
 ):
     """Make a raw authenticated API request."""
@@ -375,15 +383,30 @@ def api(
     if data:
         kwargs["json"] = json.loads(data)
 
-    # Use raw=True if output is specified to handle binary
-    raw_mode = output is not None
-    
-    # Check if we should default to raw for binary-like paths if not specified? 
-    # For now, explicit output flag implies raw.
-    
+    if stream:
+        kwargs["stream"] = True
+
+    # Use raw=True if output is specified OR stream is True
+    # If streaming, we MUST use raw to get the response object
+    raw_mode = (output is not None) or stream
+
     try:
         res = client._request(method, path, raw=raw_mode, **kwargs)
 
+        if stream:
+            # Handle streaming
+            if output and str(output) != "-":
+                with open(output, "wb") as f:
+                    for chunk in res.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                rprint(f"[green]Streamed response to {output}[/green]")
+            else:
+                # Stream to stdout
+                for chunk in res.iter_content(chunk_size=8192):
+                    sys.stdout.buffer.write(chunk)
+            return
+
+        # Normal (non-stream) handling
         if output:
             if str(output) == "-":
                 if hasattr(res, "content"):
@@ -394,15 +417,16 @@ def api(
                 if hasattr(res, "content"):
                     output.write_bytes(res.content)
                 else:
-                    # If for some reason it's not a response object (unlikely with raw=True), dump json
                     with open(output, "w") as f:
                         json.dump(res, f, indent=2)
                 rprint(f"[green]Response saved to {output}[/green]")
         else:
             rprint(res)
+
     except Exception as e:
-        if output and str(output) == "-":
-             sys.stderr.write(f"API Request Failed: {e}\n")
+        if (output and str(output) == "-") or stream:
+            # If piping or streaming, print error to stderr
+            sys.stderr.write(f"API Request Failed: {e}\n")
         else:
             rprint(f"[red]API Request Failed: {e}[/red]")
 

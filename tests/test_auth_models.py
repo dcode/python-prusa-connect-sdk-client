@@ -1,4 +1,3 @@
-
 import base64
 import json
 from datetime import UTC, datetime
@@ -12,6 +11,7 @@ def create_dummy_jwt(payload: dict) -> str:
     body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
     return f"{header}.{body}.signature"
 
+
 def test_access_token_parsing():
     """Test that PrusaAccessToken parses raw JWT strings correctly."""
     payload = {
@@ -21,7 +21,7 @@ def test_access_token_parsing():
         "sid": "session-abc",
         "app": "prusa-connect",
         "type": "access",
-        "connect_id": "team-xyz"
+        "connect_id": "team-xyz",
     }
     raw_token = create_dummy_jwt(payload)
 
@@ -43,6 +43,7 @@ def test_access_token_parsing():
     expected_dt = datetime(2025, 1, 1, 0, 0, 0, tzinfo=UTC)
     assert token.expires_at == expected_dt
 
+
 def test_refresh_token_parsing():
     """Test that PrusaRefreshToken parses correctly from raw string."""
     payload = {
@@ -51,7 +52,7 @@ def test_refresh_token_parsing():
         "exp": 1735689600,
         "sid": "session-abc",
         "app": "prusa-connect",
-        "type": "refresh"
+        "type": "refresh",
     }
     raw_token = create_dummy_jwt(payload)
 
@@ -63,6 +64,7 @@ def test_refresh_token_parsing():
     assert isinstance(token.expires_at, datetime)
     assert token.raw_token == raw_token
 
+
 def test_identity_token_parsing():
     """Test that PrusaIdentityToken parses correctly from raw string."""
     payload = {
@@ -71,7 +73,7 @@ def test_identity_token_parsing():
         "exp": 1735689600,
         "aud": "some-audience",
         "user": {"name": "Test User", "email": "test@example.com"},
-        "iss": "https://prusa3d.com"
+        "iss": "https://prusa3d.com",
     }
     raw_token = create_dummy_jwt(payload)
 

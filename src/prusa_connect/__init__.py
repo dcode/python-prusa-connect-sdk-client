@@ -1,3 +1,9 @@
+"""Prusa Connect API Client Library.
+
+A strongly-typed Python client for the Prusa Connect REST API.
+"""
+
+from .__version__ import __version__
 from .client import PrusaConnectClient
 from .exceptions import (
     PrusaApiError,
@@ -19,14 +25,8 @@ from .models import (
     Team,
     Temperatures,
 )
-from .__version__ import __version__
 
 __all__ = [
-    "PrusaConnectClient",
-    "PrusaApiError",
-    "PrusaAuthError",
-    "PrusaConnectError",
-    "PrusaNetworkError",
     "Camera",
     "File",
     "FileMeta",
@@ -35,8 +35,14 @@ __all__ = [
     "Owner",
     "Printer",
     "PrinterState",
+    "PrusaApiError",
+    "PrusaAuthError",
+    "PrusaConnectClient",
+    "PrusaConnectError",
+    "PrusaNetworkError",
     "SourceInfo",
     "SyncInfo",
     "Team",
     "Temperatures",
+    "__version__",
 ]

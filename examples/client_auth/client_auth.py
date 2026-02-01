@@ -1,3 +1,5 @@
+"""Example of Prusa Connect client authentication."""
+
 import getpass
 from pathlib import Path
 
@@ -14,6 +16,7 @@ if not creds or not creds.valid:
 
     # Developer defines how to get the OTP
     def my_otp_prompter():
+        """Callback to get OTP from user."""
         return input("Please enter code from your Authenticator app: ")
 
     email = input("Email: ")
@@ -24,6 +27,7 @@ if not creds or not creds.valid:
 
     # Create credentials and save them
     def save_tokens(data):
+        """Callback to save tokens to file."""
         with TOKEN_FILE.open("w") as f:
             import json
 
