@@ -19,6 +19,9 @@ from prusa_connect.models import Camera, File, Job, Printer, Team
 logger = structlog.get_logger()
 
 DEFAULT_BASE_URL = "https://connect.prusa3d.com/app"
+DEFAULT_TIMEOUT = 10.0
+
+__all__ = ["PrusaConnectClient"]
 
 
 class AuthStrategy(Protocol):
@@ -59,13 +62,21 @@ class PrusaConnectClient:
             }
         )
 
-    def _request(self, method: str, endpoint: str, raw: bool = False, **kwargs: Any) -> Any:
+    def _request(
+        self,
+        method: str,
+        endpoint: str,
+        raw: bool = False,
+        timeout: float = DEFAULT_TIMEOUT,
+        **kwargs: Any,
+    ) -> Any:
         """Internal method to handle requests, errors, and logging.
 
         Args:
             method: HTTP method (GET, POST, etc.).
             endpoint: API endpoint (e.g., '/printers').
             raw: If True, return the raw response object instead of parsing JSON.
+            timeout: Request timeout in seconds.
             **kwargs: Additional arguments passed to requests.request.
 
         Returns:
@@ -84,15 +95,34 @@ class PrusaConnectClient:
 
         try:
             logger.debug("API Request", method=method, url=url)
-            response = self._session.request(method, url, **kwargs)
-            logger.debug("API Response", status_code=response.status_code, headers=response.headers, body_len=len(response.content))
+            response = self._session.request(method, url, timeout=timeout, **kwargs)
+            logger.debug(
+                "API Response",
+                status_code=response.status_code,
+                headers=response.headers,
+                body_len=len(response.content),
+            )
 
             if response.status_code in (401, 403):
                 raise PrusaAuthError("Invalid or expired credentials.")
 
             if response.status_code >= 400:
+                message = f"Request failed: {response.reason}"
+                # Attempt to parse detailed error message from JSON response
+                try:
+                    error_json = response.json()
+                    # Common patterns: {"message": "..."}, {"error": "..."}, {"detail": "..."}
+                    if isinstance(error_json, dict):
+                        for key in ("message", "error", "detail"):
+                            if key in error_json and isinstance(error_json[key], str):
+                                message = error_json[key]
+                                break
+                except ValueError:
+                    # Not JSON, stick to reason
+                    pass
+
                 raise PrusaApiError(
-                    message=f"Request failed: {response.reason}",
+                    message=message,
                     status_code=response.status_code,
                     response_body=response.text[:500],
                 )
@@ -109,15 +139,16 @@ class PrusaConnectClient:
             logger.error("Network error", error=str(e))
             raise PrusaNetworkError(f"Failed to connect to Prusa Connect: {e}") from e
 
-    def api_request(self, method: str, endpoint: str, **kwargs) -> Any:
-        """Public wrapper for making raw authenticated requests."""
-        return self._request(method, endpoint, **kwargs)
-
     def get_printers(self) -> list[Printer]:
         """Fetch all printers associated with the account.
 
         Returns:
             A list of Printer objects.
+
+        Usage Example:
+            >>> printers = client.get_printers()
+            >>> for printer in printers:
+            ...     print(printer.name)
         """
         data = self._request("GET", "/printers")
 
@@ -139,6 +170,10 @@ class PrusaConnectClient:
 
         Returns:
             A Printer object.
+
+        Usage Example:
+            >>> printer = client.get_printer("c0ffee-1234")
+            >>> print(printer.printer_state)
         """
         data = self._request("GET", f"/printers/{uuid}")
         return Printer.model_validate(data)
@@ -151,6 +186,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of File objects.
+
+        Usage Example:
+            >>> files = client.get_file_list(team_id=123)
+            >>> for file in files:
+            ...     print(file.name)
         """
         # Note: The endpoint might vary based on your reverse engineering.
         # Assuming /teams/{id}/files based on typical Prusa structure or similar.
@@ -165,6 +205,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Camera objects.
+
+        Usage Example:
+            >>> cameras = client.get_cameras()
+            >>> for cam in cameras:
+            ...     print(cam.name)
         """
         data = self._request("GET", "/cameras")
         if isinstance(data, dict) and "cameras" in data:
@@ -176,6 +221,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Team objects.
+
+        Usage Example:
+            >>> teams = client.get_teams()
+            >>> for team in teams:
+            ...     print(team.name)
         """
         data = self._request("GET", "/users/teams")
         if isinstance(data, dict) and "teams" in data:
@@ -190,6 +240,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Job objects.
+
+        Usage Example:
+            >>> jobs = client.get_team_jobs(team_id=123)
+            >>> for job in jobs:
+            ...     print(job.state)
         """
         data = self._request("GET", f"/teams/{team_id}/jobs")
         if isinstance(data, dict) and "jobs" in data:
@@ -204,6 +259,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Job objects.
+
+        Usage Example:
+            >>> jobs = client.get_printer_jobs("c0ffee-1234")
+            >>> for job in jobs:
+            ...     print(job.progress)
         """
         data = self._request("GET", f"/printers/{printer_uuid}/jobs")
         if isinstance(data, dict) and "jobs" in data:
@@ -220,6 +280,9 @@ class PrusaConnectClient:
 
         Returns:
             True if successful.
+
+        Usage Example:
+            >>> success = client.send_command("c0ffee-1234", "PAUSE_PRINT")
         """
         payload = {"command": command}
         if kwargs:
@@ -237,6 +300,11 @@ class PrusaConnectClient:
 
         Returns:
             The binary image data.
+
+        Usage Example:
+            >>> image_data = client.get_snapshot("camera_1")
+            >>> with open("snap.jpg", "wb") as f:
+            ...     f.write(image_data)
         """
         # Raw response for binary data
         response = self._request("GET", f"/cameras/{camera_id}/snapshots/last", raw=True)
@@ -250,7 +318,9 @@ class PrusaConnectClient:
 
         Returns:
             True if triggered.
+
+        Usage Example:
+            >>> client.trigger_snapshot("token_abc_123")
         """
         self._request("POST", f"/cameras/{camera_token}/snapshots")
         return True
-

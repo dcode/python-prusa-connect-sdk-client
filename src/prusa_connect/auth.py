@@ -5,7 +5,6 @@ It provides a Credentials object that can automatically refresh tokens
 and attach headers to requests.
 """
 
-from datetime import timedelta
 import base64
 import hashlib
 import json
@@ -13,7 +12,7 @@ import os
 import re
 import urllib.parse
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 

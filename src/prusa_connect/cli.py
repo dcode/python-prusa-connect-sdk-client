@@ -11,7 +11,6 @@ from typing import Annotated, Literal
 
 import better_exceptions
 import cyclopts
-import requests
 import structlog
 from rich import print as rprint
 from rich.console import Console
@@ -377,10 +376,10 @@ def api(
 
     # Use raw=True if output is specified to handle binary
     raw_mode = output is not None
-    
-    # Check if we should default to raw for binary-like paths if not specified? 
+
+    # Check if we should default to raw for binary-like paths if not specified?
     # For now, explicit output flag implies raw.
-    
+
     try:
         res = client._request(method, path, raw=raw_mode, **kwargs)
 
