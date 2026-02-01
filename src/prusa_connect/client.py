@@ -15,10 +15,14 @@ from prusa_connect.exceptions import (
     PrusaNetworkError,
 )
 from prusa_connect.models import Camera, File, Job, Printer, Team
+from .__version__ import __version__
+
+__all__ = ["PrusaConnectClient", "AuthStrategy"]
 
 logger = structlog.get_logger()
 
 DEFAULT_BASE_URL = "https://connect.prusa3d.com/app"
+DEFAULT_TIMEOUT = 30.0
 
 
 class AuthStrategy(Protocol):
@@ -39,22 +43,35 @@ class PrusaConnectClient:
     Attributes:
         token: The API Bearer token.
         base_url: The API base URL.
+
+    Usage Example:
+        >>> from prusa_connect import PrusaConnectClient
+        >>> # Assume you have a credentials object
+        >>> client = PrusaConnectClient(credentials=my_creds)
+        >>> printers = client.get_printers()
     """
 
-    def __init__(self, credentials: AuthStrategy, base_url: str = DEFAULT_BASE_URL) -> None:
+    def __init__(
+        self,
+        credentials: AuthStrategy,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: float = DEFAULT_TIMEOUT,
+    ) -> None:
         """Initializes the client.
 
         Args:
             credentials: An object adhering to the AuthStrategy protocol.
                          (e.g. PrusaConnectCredentials)
             base_url: Optional override for the API endpoint.
+            timeout: Default timeout for API requests in seconds.
         """
         self._base_url = base_url.rstrip("/")
         self._credentials = credentials
+        self._timeout = timeout
         self._session = requests.Session()
         self._session.headers.update(
             {
-                "User-Agent": "prusa-connect-python/0.1.0",
+                "User-Agent": f"prusa-connect-python/{__version__}",
                 "Accept": "application/json",
             }
         )
@@ -66,7 +83,7 @@ class PrusaConnectClient:
             method: HTTP method (GET, POST, etc.).
             endpoint: API endpoint (e.g., '/printers').
             raw: If True, return the raw response object instead of parsing JSON.
-            **kwargs: Additional arguments passed to requests.request.
+            **kwargs: Additional arguments passed to requests.request (e.g., timeout).
 
         Returns:
             The parsed JSON response, or the Requests Response object if raw=True.
@@ -81,11 +98,17 @@ class PrusaConnectClient:
         self._credentials.before_request(self._session.headers)
 
         url = f"{self._base_url}/{endpoint.lstrip('/')}"
+        kwargs.setdefault("timeout", self._timeout)
 
         try:
             logger.debug("API Request", method=method, url=url)
             response = self._session.request(method, url, **kwargs)
-            logger.debug("API Response", status_code=response.status_code, headers=response.headers, body_len=len(response.content))
+            logger.debug(
+                "API Response",
+                status_code=response.status_code,
+                headers=response.headers,
+                body_len=len(response.content),
+            )
 
             if response.status_code in (401, 403):
                 raise PrusaAuthError("Invalid or expired credentials.")
@@ -109,8 +132,19 @@ class PrusaConnectClient:
             logger.error("Network error", error=str(e))
             raise PrusaNetworkError(f"Failed to connect to Prusa Connect: {e}") from e
 
-    def api_request(self, method: str, endpoint: str, **kwargs) -> Any:
-        """Public wrapper for making raw authenticated requests."""
+    def api_request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
+        """Public wrapper for making raw authenticated requests.
+
+        Args:
+            method: HTTP method (e.g. "GET", "POST").
+            endpoint: API endpoint (e.g. "/printers").
+            **kwargs: Arbitrary keyword arguments passed to the underlying
+                `requests.request` call (e.g. `json`, `data`, `timeout`).
+
+        Usage Example:
+            >>> response = client.api_request("GET", "/printers")
+            >>> print(response)
+        """
         return self._request(method, endpoint, **kwargs)
 
     def get_printers(self) -> list[Printer]:
@@ -118,6 +152,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Printer objects.
+
+        Usage Example:
+            >>> printers = client.get_printers()
+            >>> for printer in printers:
+            ...     print(printer.name, printer.printer_state)
         """
         data = self._request("GET", "/printers")
 
@@ -139,6 +178,10 @@ class PrusaConnectClient:
 
         Returns:
             A Printer object.
+
+        Usage Example:
+            >>> printer = client.get_printer("c0ffee-uuid")
+            >>> print(printer.telemetry.temp_nozzle)
         """
         data = self._request("GET", f"/printers/{uuid}")
         return Printer.model_validate(data)
@@ -151,6 +194,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of File objects.
+
+        Usage Example:
+            >>> files = client.get_file_list(team_id=123)
+            >>> for file in files:
+            ...     print(file.name)
         """
         # Note: The endpoint might vary based on your reverse engineering.
         # Assuming /teams/{id}/files based on typical Prusa structure or similar.
@@ -165,6 +213,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Camera objects.
+
+        Usage Example:
+            >>> cameras = client.get_cameras()
+            >>> for cam in cameras:
+            ...     print(cam.name)
         """
         data = self._request("GET", "/cameras")
         if isinstance(data, dict) and "cameras" in data:
@@ -176,6 +229,10 @@ class PrusaConnectClient:
 
         Returns:
             A list of Team objects.
+
+        Usage Example:
+            >>> teams = client.get_teams()
+            >>> print(teams[0].name)
         """
         data = self._request("GET", "/users/teams")
         if isinstance(data, dict) and "teams" in data:
@@ -190,6 +247,10 @@ class PrusaConnectClient:
 
         Returns:
             A list of Job objects.
+
+        Usage Example:
+            >>> jobs = client.get_team_jobs(team_id=123)
+            >>> print(f"Found {len(jobs)} jobs")
         """
         data = self._request("GET", f"/teams/{team_id}/jobs")
         if isinstance(data, dict) and "jobs" in data:
@@ -204,6 +265,11 @@ class PrusaConnectClient:
 
         Returns:
             A list of Job objects.
+
+        Usage Example:
+            >>> jobs = client.get_printer_jobs("printer-uuid")
+            >>> if jobs:
+            ...     print(jobs[0].state)
         """
         data = self._request("GET", f"/printers/{printer_uuid}/jobs")
         if isinstance(data, dict) and "jobs" in data:
@@ -220,6 +286,9 @@ class PrusaConnectClient:
 
         Returns:
             True if successful.
+
+        Usage Example:
+            >>> client.send_command("printer-uuid", "PAUSE_PRINT")
         """
         payload = {"command": command}
         if kwargs:
@@ -237,6 +306,11 @@ class PrusaConnectClient:
 
         Returns:
             The binary image data.
+
+        Usage Example:
+            >>> image_data = client.get_snapshot(camera_id="cam-1")
+            >>> with open("snap.jpg", "wb") as f:
+            ...     f.write(image_data)
         """
         # Raw response for binary data
         response = self._request("GET", f"/cameras/{camera_id}/snapshots/last", raw=True)
@@ -250,7 +324,9 @@ class PrusaConnectClient:
 
         Returns:
             True if triggered.
+
+        Usage Example:
+            >>> client.trigger_snapshot("camera-token-xyz")
         """
         self._request("POST", f"/cameras/{camera_token}/snapshots")
         return True
-
