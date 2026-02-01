@@ -1,0 +1,38 @@
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+
+      - name: Sync deps (frozen)
+        run: |
+          ~/.cargo/bin/uv venv --python 3.13
+          source .venv/bin/activate
+          ~/.cargo/bin/uv sync --frozen
+
+      - name: Lint & Test
+        run: |
+          source .venv/bin/activate
+          hatch run lint
+          hatch run test

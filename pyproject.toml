@@ -1,15 +1,21 @@
 [project]
 name = "prusa-connect"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Prusa Connect CLI and API client"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "requests>=2.32.5",
-    "rich>=14.3.1",
     "structlog>=25.5.0",
     "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
+    "pydantic-settings>=2.0.0", # Required for config.py
+]
+
+[project.optional-dependencies]
+# Users must run: pip install "prusa-connect[cli]"
+cli = [
+    "cyclopts>=2.0.0",
+    "rich>=14.3.1",
     "better-exceptions>=0.3.3",
 ]
 
@@ -27,16 +33,50 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "hatch>=1.16.3",
+    "pyrefly>=0.50.1",
+    "pytest>=9.0.2",
+    "responses>=0.25.8",
     "ruff>=0.14.14",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prusa_connect"]
 
+[tool.hatch.version]
+path = "src/prusa_connect/__version__.py"
+
+[tool.hatch.envs.default.scripts]
+lint = "ruff check ."
+test = "pytest -q"
+typecheck = "pyright"
+
+[tool.hatch.envs.default]
+installer = "uv"
+
+[tool.hatch.envs.default.env-vars]
+UV_DEFAULT_INDEX = "https://pypi.org/simple/"
+
 
 [tool.ruff]
+target-version = "py313"
 line-length = 120
 
 [tool.ruff.lint]
-extend-select = ["I"]
+select = ["F", "E", "W", "I", "N", "D", "UP", "B", "A", "C4", "SIM", "TC", "RUF"]
+ignore = ["D203", "D213"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+known-first-party = ["prusa_connect"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100","D101", "D102", "D103", "S101"]
+
+[tool.pyrefly]
+project-includes = [
+    "**/*.py*",
+]
