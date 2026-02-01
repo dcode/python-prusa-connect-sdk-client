@@ -27,9 +27,9 @@ jobs:
 
       - name: Sync deps (frozen)
         run: |
-          ~/.cargo/bin/uv venv --python 3.13
+          ~/.local/bin/uv venv --python 3.13
           source .venv/bin/activate
-          ~/.cargo/bin/uv sync --frozen
+          ~/.local/bin/uv sync --frozen
 
       - name: Lint & Test
         run: |
