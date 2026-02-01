@@ -1,3 +1,4 @@
+import base64
 import json
 from unittest.mock import MagicMock, patch
 
@@ -6,18 +7,19 @@ import pytest
 from prusa_connect.auth import PrusaConnectCredentials
 from prusa_connect.client import PrusaConnectClient
 from prusa_connect.exceptions import PrusaAuthError
-import base64
+
 
 # Helper to encode base64url without padding
 def b64url(data):
     return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip("=")
 
+
 def make_dummy_jwt(payload):
     return f"{b64url({})}.{b64url(payload)}.sig"
 
+
 def test_credentials_load_default_env_json(monkeypatch):
     """Test loading credentials from PRUSA_TOKENS_JSON."""
-
     payload = {
         "jti": "1",
         "sub": 1,
@@ -95,13 +97,14 @@ def test_credentials_load_default_file():
         "connect_id": "cid",
     }
 
-    with patch("pathlib.Path.exists", return_value=True):
-        # Must patch pathlib.Path.open because load_default uses Path objects
-        with patch("pathlib.Path.open", new_callable=MagicMock) as mock_open:
-            with patch("json.load", return_value=data):
-                creds = PrusaConnectCredentials.load_default()
-                assert creds is not None
-                assert creds.tokens.access_token.raw_token == jwt_token
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.open", new_callable=MagicMock),
+        patch("json.load", return_value=data),
+    ):
+        creds = PrusaConnectCredentials.load_default()
+        assert creds is not None
+        assert creds.tokens.access_token.raw_token == jwt_token
 
 
 def test_client_init_no_creds_raises():
