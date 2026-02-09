@@ -1,0 +1,33 @@
+name: docs
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  gh-deploy:
+    runs-on: ubuntu-latest
+    environment: gh-pages
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Git Credentials
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install the project
+        run: uv sync --frozen --all-extras --all-groups
+      - name: Build project
+        run: uv run hatch build
+      - name: Deploy docs
+        run: uv run hatch run docs:gh-deploy

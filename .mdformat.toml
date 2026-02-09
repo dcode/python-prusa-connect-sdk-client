@@ -1,0 +1,7 @@
+# .mdformat.toml
+wrap = 80
+number = true
+end_of_line = 'lf'
+codeformatters = ['python']
+plugin.mkdocs.align_semantic_breaks_in_lists = true
+exclude = ["docs/cli_reference.md"]

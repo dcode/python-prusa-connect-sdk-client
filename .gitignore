@@ -11,12 +11,18 @@ wheels/
 
 # Local Development & Secrets
 prusa_tokens.json
-login_page.html
-main.js
 data/
 .idea/
 .vscode/
+.coverage
 .DS_Store
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
 
+# Generated Protobuf files
+src/prusa/connect/client/camera_v2_pb2.py
+src/prusa/connect/client/camera_v2_pb2.pyi
+
+# Generated docs
+site/

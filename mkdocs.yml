@@ -1,0 +1,50 @@
+site_name: Unoriginal Prusa Connect Client SDK
+theme:
+  name: material
+  favicon: img/favicon.png
+  icon:
+    logo: material/printer-3d
+  palette:
+    primary: deep orange # Matches Prusa branding
+  features:
+    - content.code.copy
+    - navigation.sections
+markdown_extensions:
+  - admonition
+  - attr_list
+  - codehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["src"]
+          options:
+            docstring_style: google
+            docstring_section_style: spacy
+            show_submodules: true
+            summary:
+              attributes: false
+              functions: true
+              modules: true
+  - cyclopts
+exclude_docs: |
+  development_notes/
+extra_css:
+  - css/extra.css
+  - css/mkdocstrings.css
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Examples & How-Tos: examples.md
+  - API Reference:
+      - Auth: api/auth.md
+      - Client: api/client.md
+      - Models: api/models.md
+  - CLI Reference: cli_reference.md
+  - Architecture: internal_architecture.md
+not_in_nav: |
+  /api/index.md
