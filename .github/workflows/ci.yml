@@ -1,38 +1,51 @@
 # .github/workflows/ci.yml
 name: CI
-
 on:
   push:
+    branches: ["main"]
   pull_request:
-
+    branches: ["main"]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  lint:
+    name: Lint (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v7
         with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Cache uv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
       - name: Sync deps (frozen)
+        run: uv sync --frozen --all-extras --all-groups
+      - name: Use Hatch to build, lint, and typecheck
         run: |
-          ~/.local/bin/uv venv --python 3.13
-          source .venv/bin/activate
-          ~/.local/bin/uv sync --frozen
-
-      - name: Lint & Test
+          uv run hatch build
+          uv run hatch fmt --check
+          uv run hatch run typing:check
+  test:
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Sync deps (frozen)
+        run: uv sync --frozen --all-extras --all-groups
+      - name: Use Hatch to test
         run: |
-          source .venv/bin/activate
-          hatch run lint
-          hatch run test
+          uv run hatch test -py ${{ matrix.python-version }}

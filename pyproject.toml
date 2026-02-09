@@ -1,9 +1,7 @@
 [project]
-name = "prusa-connect"
-dynamic = ["version"]
+name = "prusa-connect-sdk-client" # Normalized per https://packaging.python.org/en/latest/specifications/name-normalization/
 description = "Unoriginal Prusa Connect API client for Python and CLI"
 readme = "README.md"
-requires-python = ">=3.12"
 authors = [
   { name = "Derek Ditch", email = "dcode@users.noreply.github.com"}
 ]
@@ -14,6 +12,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 keywords = [
@@ -22,38 +21,45 @@ keywords = [
   "api",
   "client",
   "3d-printing",
-  "iot"
+  "iot",
+  "sdk"
 ]
+
+dynamic = ["version"]
+requires-python = ">=3.12"
 dependencies = [
     "requests>=2.32.5",
     "structlog>=25.5.0",
     "pydantic>=2.0.0",
+    "platformdirs>=4.0.0",
+    "python-socketio>=5.16.1",
+    "protobuf>=6.33.5",
 ]
 
 [project.license]
 text = "AGPL-3.0-or-later"
 
 [project.urls]
-Documentation = "https://github.com/dcode/python-prusa-connect/#readme"
-Homepage = "https://github.com/dcode/python-prusa-connect"
-Issues = "https://github.com/dcode/python-prusa-connect/issues"
-Repository = "https://github.com/dcode/python-prusa-connect"
+Documentation = "https://github.com/dcode/python-prusa-connect-sdk-client/#readme"
+Homepage = "https://github.com/dcode/python-prusa-connect-sdk-client"
+Issues = "https://github.com/dcode/python-prusa-connect-sdk-client/issues"
+Repository = "https://github.com/dcode/python-prusa-connect-sdk-client"
 
 [project.optional-dependencies]
 all = [
-    "prusa-connect[cli]",
+    "prusa-connect-sdk-client[cli]",
 ]
 
-# Users must run: pip install "prusa-connect[cli]"
+# Users must run: pip install "prusa-connect-sdk-client[cli]"
 cli = [
     "cyclopts>=2.0.0",
     "rich>=14.3.1",
     "better-exceptions>=0.3.3",
-    "pydantic-settings>=2.0.0",
+    "pydantic-settings>=2.2.0",
 ]
 
 [project.scripts]
-prusactl = "prusa_connect.cli:main"
+prusactl = "prusa.connect.client.cli.main:main"
 
 [[tool.uv.index]]
 name = "pypi"
@@ -61,35 +67,68 @@ url = "https://pypi.org/simple"
 default = true
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-protobuf", "mypy-protobuf"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
     "hatch>=1.16.3",
+    "hatch-protobuf>=0.5.0",
+    "mdformat-gfm>=1.0.0",
+    "mdformat-ruff>=0.1.3",
+    "mypy-protobuf>=5.0.0",
+    "pre-commit>=4.5.1",
+    "pymarkdownlnt>=0.9.35",
     "pyrefly>=0.50.1",
     "pytest>=9.0.2",
+    "pytest-deepassert>=0.3.0",
     "responses>=0.25.8",
     "ruff>=0.14.14",
 ]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/prusa_connect"]
+docs = [
+    "cyclopts[mkdocs]>=4.5.1",
+    "hatch-mkdocs>=0.1.0",
+    "markdown-callouts>=0.4.0",
+    "markdown-gfm-admonition>=0.3.0",
+    "mdformat>=1.0.0",
+    "mdformat-mkdocs[recommended]>=5.1.4",
+    "mkdocs-autorefs>=1.4.3",
+    "mkdocs-material>=9.7.1",
+    "mkdocstrings[python]>=1.0.3",
+    "pymdown-extensions>=10.20.1",
+]
 
 [tool.hatch.version]
-path = "src/prusa_connect/__version__.py"
+path = "src/prusa/connect/client/__version__.py"
 
-[tool.hatch.envs.default.scripts]
-lint = "ruff check ."
-test = "pytest -q"
-typecheck = "pyright"
+[tool.hatch.build.targets.wheel]
+packages = ["src/prusa"]
 
 [tool.hatch.envs.default]
 installer = "uv"
 env-vars = { "UV_DEFAULT_INDEX" = "https://pypi.org/simple/" }
+features = ["cli"]
+
+[tool.hatch.build.hooks.protobuf]
+dependencies = ["hatch-protobuf", "mypy-protobuf"]
+proto_paths = ["proto"]
+output_path = "src"
+generate_grpc = false
+generate_pyi = false
+
+[[tool.hatch.build.hooks.protobuf.generators]]
+name = "mypy"
+outputs = ["{proto_path}/{proto_name}_pb2.pyi"]
+
+################################################################################
+# Static Analysis (Linting & Formatting)
+################################################################################
+
+[tool.hatch.envs.hatch-static-analysis]
+dependencies = ["ruff>=0.14.14"]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
@@ -101,12 +140,79 @@ convention = "google"
 
 [tool.ruff.lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
-known-first-party = ["prusa_connect"]
+known-first-party = ["prusa.connect.client"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D100","D101", "D102", "D103", "S101"]
 
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-decorators = ["*app.command", "*app.default"]
+
+################################################################################
+# Type Checking
+################################################################################
+
+[tool.hatch.envs.typing]
+features = ["cli"]
+dependency-groups = ["dev", "docs"]
+
+[tool.hatch.envs.typing.scripts]
+check = "uv run pyrefly check ."
+
 [tool.pyrefly]
-project-includes = [
-    "**/*.py*",
+project-includes = ["**/*.py*"]
+ignore-errors-in-generated-code = true
+
+################################################################################
+# Testing
+################################################################################
+
+[tool.hatch.envs.hatch-test]
+features = ["cli"]
+dependencies = [
+    "pytest",
+    "pytest-cov",
+    "pytest-deepassert",
+    "pyrefly",
+    "responses",
+    "ruff",
 ]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.12", "3.14"]
+
+[tool.hatch.envs.hatch-test.overrides]
+matrix.cli.features = ["cli"]
+
+[tool.pytest.ini_options]
+addopts = [
+  "--deepassert",
+  "--import-mode=importlib",
+]
+
+[tool.coverage]
+run.branch = true
+run.omit = ["tests/*"]
+report.omit = ["tests/*"]
+report.exclude_also = ["if TYPE_CHECKING:"]
+
+################################################################################
+# Documentation Lint & Build
+################################################################################
+
+[tool.hatch.envs.docs]
+features = ["cli"]
+dependency-groups = ["dev", "docs"]
+
+[tool.hatch.envs.docs.scripts]
+build = "mkdocs build -f mkdocs.yml {args}"
+serve = "mkdocs serve -f mkdocs.yml {args}"
+gh-deploy = "mkdocs gh-deploy -f mkdocs.yml {args}"
+
+[tool.pymarkdown]
+plugins.md013.enabled = false # Let mdformat handle line wrapping
+plugins.md033.enabled = false # Allow inline HTML for MkDocs
+plugins.md041.enabled = false # First line in file does not always have to be a top level heading
+plugins.md024.enabled = false # Allow duplicate headings in different sections
+plugins.md007.enabled = false # Let mdformat handle list indentation
+plugins.md046.enabled = false # mdformat does this properly anyway, disabling stops mkdocs admonitions from throwing false positives

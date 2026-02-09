@@ -1,0 +1,6 @@
+h2 {
+  border-bottom-width: thin;
+  border-bottom-color: var(--md-primary-fg-color);
+  border-bottom-style: solid;
+  color: var(--md-primary-fg-color);
+}

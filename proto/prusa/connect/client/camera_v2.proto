@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package prusa.camera.v2;
+
+// Used in triggers to request data or toggle persistent features
+enum FeatureState {
+  FEATURE_INVALID = 0;
+  FEATURE_ENABLED = 1;  // Request data / Turn on
+  FEATURE_DISABLED = 2; // Stop data / Turn off
+}
+
+enum RotationDirection {
+  ROTATION_DIRECTION_INVALID = 0;
+  LEFT = 1;
+  RIGHT = 2;
+  UP = 3;
+  DOWN = 4;
+}
+
+enum CameraMode {
+  CAMERA_MODE_INVALID = 0;
+  AUTO = 1;
+  DAY = 2;
+  NIGHT = 3;
+}
+
+enum VideoQuality {
+  VIDEO_QUALITY_INVALID = 0;
+  VIDEO_QUALITY_SD = 1;
+  VIDEO_QUALITY_HD = 2;
+  VIDEO_QUALITY_FHD = 3;
+}
+
+enum TimelapseStatus {
+  TIMELAPSE_INVALID = 0;
+  TIMELAPSE_IDLE = 1;
+  TIMELAPSE_IN_PROGRESS = 2;
+  TIMELAPSE_DONE = 3;
+  TIMELAPSE_FAILED = 4;
+}
+
+// --- Handshake & Trigger Messages ---
+
+message ClientAuthentication {
+  string camera_token = 1;     // Always required to identify the target camera
+  string client_type = 2;      // "client" (device) or "user" (viewer)
+  string client_jwt_token = 3; // The User's session JWT
+  string fingerprint = 4;      // Browser/Device fingerprint for auth
+}
+
+message CameraTrigger {
+  FeatureState get_status = 1;
+  FeatureState get_features = 2;
+  FeatureState get_snapshot = 3;
+  FeatureState set_snapshot_enable = 4;
+  FeatureState set_timelapse_enable = 5;
+  FeatureState start_fw_update = 8;
+  FeatureState start_device_reboot = 9;
+  FeatureState start_rtsp_server = 10;
+  string camera_token = 11;
+  FeatureState get_protocol_information = 12;
+  string request_id = 13;
+  FeatureState start_timelapse_video = 14; // Triggers MP4 rendering
+  FeatureState get_timelapse_file_list = 15;
+}
+
+// --- Configuration Messages ---
+
+message RotationSettings {
+  RotationDirection direction = 1;
+  uint32 angle = 2;
+}
+
+message CameraControl {
+  RotationSettings rotation = 1;
+  FeatureState camera_light = 2;
+  uint32 exposure_time = 3;
+  CameraMode camera_mode = 4;
+  uint32 snapshot_interval = 5;
+  int32 contrast = 6;
+  uint32 volume = 7;
+  int32 brightness = 8;
+  int32 saturation = 9;
+  string printing_job_name = 10; // Used to name the resulting timelapse file
+}
+
+message ServerToCamera {
+  CameraControl control = 3;
+  string camera_token = 6;
+  string request_id = 7;
+}
+
+// --- Status & Features (Inbound) ---
+
+message WifiInfo {
+  string ssid = 1;
+  string mac = 2;
+  string ipv4 = 3;
+  string ipv6 = 4;
+  uint32 signal_quality = 5;
+}
+
+message EthernetInfo {
+  string mac = 1;
+  string ipv4 = 2;
+  string ipv6 = 3;
+}
+
+message NetworkInfo {
+  oneof interface {
+    WifiInfo wifi = 1;
+    EthernetInfo ethernet = 2;
+  }
+}
+
+message CameraFeatures {
+  bool has_ptz = 1;
+  bool has_ir = 2;
+  bool has_led = 3;
+  bool has_audio = 4;
+  bool has_sd_card = 5;
+  VideoQuality max_quality = 6;
+  string firmware_version = 7;
+  string camera_token = 8;
+  bool has_webrtc = 9;
+}
+
+message CameraStatus {
+  float mcu_temperature = 1;
+  uint64 uptime_raw = 2;
+  string uptime = 3;
+  string load = 4;
+  uint64 total_ram = 5;
+  uint64 free_ram = 6;
+  uint64 shared_ram = 7;
+  uint64 buffer_ram = 8;
+  uint32 procs = 9;
+  TimelapseStatus timelapse_video_status = 10;
+}
+
+message CameraToServer {
+  CameraStatus camera_status = 1;
+  NetworkInfo network = 4;
+  string camera_token = 8;
+}

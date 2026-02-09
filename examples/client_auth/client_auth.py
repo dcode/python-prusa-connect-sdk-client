@@ -3,8 +3,8 @@
 import getpass
 from pathlib import Path
 
-from prusa_connect.auth import PrusaConnectCredentials, interactive_login
-from prusa_connect.client import PrusaConnectClient
+from prusa.connect.client import PrusaConnectClient
+from prusa.connect.client.auth import PrusaConnectCredentials, interactive_login
 
 TOKEN_FILE = Path("my_tokens.json")
 

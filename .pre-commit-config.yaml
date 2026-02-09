@@ -1,0 +1,29 @@
+repos:
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 1.0.0 # Use the latest version
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-mkdocs[recommended]
+          - mdformat-ruff
+  - repo: https://github.com/jackdewinter/pymarkdown
+    rev: v0.9.35 # Use the latest version
+    hooks:
+      - id: pymarkdown
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+        exclude: ^mkdocs\.yml$
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.10
+    hooks:
+      - id: actionlint
