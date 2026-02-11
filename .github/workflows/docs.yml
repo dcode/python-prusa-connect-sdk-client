@@ -1,4 +1,4 @@
-name: docs
+name: Deploy Docs
 permissions:
   contents: read
 on:
@@ -10,28 +10,45 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  gh-deploy:
+  build:
+    runs-on: ubuntu-latest
     env:
       MKDOCS_GIT_COMMITTERS_APIKEY: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: ubuntu-latest
-    environment: gh-pages
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Configure Git Credentials
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Install the project
+      - name: Install pngquant for image optimization
+        run: sudo apt-get update && sudo apt-get install -y pngquant
+      - name: Install project
         run: uv sync --frozen --all-extras --all-groups
+      - name: Cache mkdocs-material optimize
+        uses: actions/cache@v4
+        with:
+          key: mkdocs-material-optimize-${{ hashFiles('mkdocs.yml') }}
+          path: .cache/plugin/optimize
       - name: Build project
         run: uv run hatch build
-      - name: Deploy docs
-        run: uv run hatch run docs:gh-deploy --force
+      - name: Build docs
+        run: uv run hatch run docs:build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'site/'
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: gh-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
