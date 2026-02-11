@@ -9,4 +9,4 @@ hatch version minor
 ```
 """
 
-__version__ = "1.0.0a0"
+__version__ = "1.0.0a1"
