@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Use the PAT so the subsequent push triggers CI workflows
           token: ${{ secrets.DEPENDABOT_PAT }}
