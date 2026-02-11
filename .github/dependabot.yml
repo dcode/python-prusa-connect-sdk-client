@@ -10,7 +10,6 @@ updates:
       - "actions"
     commit-message:
       prefix: "ci"
-
   # Maintain Python dependencies
   - package-ecosystem: "pip"
     directory: "/"

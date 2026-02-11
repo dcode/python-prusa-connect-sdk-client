@@ -11,12 +11,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   gh-deploy:
+    env:
+      MKDOCS_GIT_COMMITTERS_APIKEY: ${{ secrets.GITHUB_TOKEN }}
     runs-on: ubuntu-latest
     environment: gh-pages
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]

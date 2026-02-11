@@ -40,8 +40,8 @@ dependencies = [
 text = "AGPL-3.0-or-later"
 
 [project.urls]
-Documentation = "https://github.com/dcode/python-prusa-connect-sdk-client/#readme"
-Homepage = "https://github.com/dcode/python-prusa-connect-sdk-client"
+Documentation = "https://dcode.github.io/python-prusa-connect-sdk-client/"
+Homepage = "https://dcode.github.io/python-prusa-connect-sdk-client/"
 Issues = "https://github.com/dcode/python-prusa-connect-sdk-client/issues"
 Repository = "https://github.com/dcode/python-prusa-connect-sdk-client"
 
@@ -93,6 +93,8 @@ docs = [
     "mdformat>=1.0.0",
     "mdformat-mkdocs[recommended]>=5.1.4",
     "mkdocs-autorefs>=1.4.3",
+    "mkdocs-git-committers-plugin-2>=2.5.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.5.1",
     "mkdocs-material>=9.7.1",
     "mkdocstrings[python]>=1.0.3",
     "pymdown-extensions>=10.20.1",
@@ -210,6 +212,10 @@ serve = "mkdocs serve -f mkdocs.yml {args}"
 gh-deploy = "mkdocs gh-deploy -f mkdocs.yml {args}"
 
 [tool.pymarkdown]
+extensions.front-matter.enabled = true
+extensions.front-matter.enabled-by-default = true
+plugins.md002.enabled = false
+plugins.md022.enabled = false
 plugins.md013.enabled = false # Let mdformat handle line wrapping
 plugins.md033.enabled = false # Allow inline HTML for MkDocs
 plugins.md041.enabled = false # First line in file does not always have to be a top level heading

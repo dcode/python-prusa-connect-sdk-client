@@ -1,12 +1,16 @@
 site_name: Unoriginal Prusa Connect Client SDK
+edit_uri: https://github.com/dcode/python-prusa-connect-sdk-client/edit/main/docs/
 theme:
   name: material
   favicon: img/favicon.png
   icon:
     logo: material/printer-3d
+    edit: material/pencil
+    view: material/eye
   palette:
     primary: deep orange # Matches Prusa branding
   features:
+    - content.action.edit
     - content.code.copy
     - navigation.sections
 markdown_extensions:
@@ -19,6 +23,15 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 plugins:
   - search
+#  TODO(dcode): Configure dependencies for optimize plugin
+#  - optimize:
+#      enabled: !ENV [CI, false]
+  - git-revision-date-localized:
+      enabled: !ENV [CI, false]
+      type: timeago
+      enable_creation_date: true
+      exclude:
+      - index.md
   - mkdocstrings:
       handlers:
         python:
@@ -31,21 +44,42 @@ plugins:
               attributes: false
               functions: true
               modules: true
+  - git-committers:
+      repository: dcode/python-prusa-connect-sdk-client
+      branch: main
+      enabled: !ENV [CI, false]
+  - meta
   - cyclopts
+  - privacy:
+      enabled: !ENV [CI, false]
+  - typeset
 exclude_docs: |
   development_notes/
 extra_css:
   - css/extra.css
   - css/mkdocstrings.css
+extra:
+  analytics:
+    provider: google
+    property: G-TTT45413CN
+  consent:
+    title: Cookie consent
+    description: >-
+      We use cookies to recognize your repeated visits and preferences, as well
+      as to measure the effectiveness of our documentation and whether users
+      find what they're searching for. With your consent, you're helping us to
+      make our documentation better.
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Examples & How-Tos: examples.md
+  - CLI Reference: cli_reference.md
   - API Reference:
       - Auth: api/auth.md
       - Client: api/client.md
       - Models: api/models.md
-  - CLI Reference: cli_reference.md
-  - Architecture: internal_architecture.md
+  - Development Resources:
+    - Contributing: contributing.md
+    - Architecture Notes: internal_architecture.md
 not_in_nav: |
   /api/index.md
