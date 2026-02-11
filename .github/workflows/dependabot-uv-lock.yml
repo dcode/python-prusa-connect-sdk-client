@@ -1,4 +1,6 @@
 name: "Dependabot: Update uv.lock"
+permissions:
+  contents: read
 on:
   pull_request:
     types: [opened, synchronize]
