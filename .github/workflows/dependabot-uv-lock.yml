@@ -1,27 +1,53 @@
 name: "Dependabot: Update uv.lock"
 permissions:
   contents: read
+
 on:
   pull_request_target:
     types: [opened, synchronize]
+
 jobs:
-  update-uv-lock:
-    if: github.actor == 'dependabot[bot]'
+  lock:
     runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
     steps:
       - name: Checkout the PR branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
-          # Use the PAT so the subsequent push triggers CI workflows
-          token: ${{ secrets.DEPENDABOT_PAT }}
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
       - name: Update the lockfile
         run: uv lock
+
+      - name: Upload uv.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: uv-lock
+          path: uv.lock
+
+  commit:
+    needs: lock
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.DEPENDABOT_PAT }}
+
+      - name: Download uv.lock
+        uses: actions/download-artifact@v4
+        with:
+          name: uv-lock
+
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
