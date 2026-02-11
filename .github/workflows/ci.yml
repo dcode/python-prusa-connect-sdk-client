@@ -31,7 +31,7 @@ jobs:
           uv run hatch fmt --check
           uv run hatch run typing:check
   test:
-    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    name: Unit Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]

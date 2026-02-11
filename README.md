@@ -10,9 +10,9 @@ provides a frictionless, strongly-typed interface for the Prusa Connect API.
 > [!WARNING] **A Note on Unoriginal-ness**
 >
 > This SDK is not an officially supported or endorsed product of Prusa Research.
-> It is developed and maintained by an independent developer and is not affiliated
-> with Prusa Research. See [Motivation & Design](#motivation-design) for more
-> information.
+> It is developed and maintained by an independent developer and is not
+> affiliated with Prusa Research. See [Motivation & Design](#motivation-design)
+> for more information.
 
 **Features:**
 
