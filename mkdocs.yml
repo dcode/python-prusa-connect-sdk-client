@@ -24,7 +24,7 @@ markdown_extensions:
 plugins:
   - search
   - optimize:
-      enabled: !ENV [CI, false]
+      enabled: false
   - git-revision-date-localized:
       enabled: !ENV [CI, false]
       type: timeago
@@ -68,13 +68,19 @@ extra:
       make our documentation better.
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - Examples & How-Tos: examples.md
-  - CLI Reference: cli_reference.md
-  - API Reference:
-      - Auth: api/auth.md
-      - Client: api/client.md
-      - Models: api/models.md
+  - Getting Started:
+      - Installation: installation.md
+      - Authentication: authentication.md
+  - CLI User Guide:
+      - Quickstart: cli/quickstart.md
+      - Reference: cli/reference.md
+  - SDK Developer Guide:
+      - Quickstart: sdk/quickstart.md
+      - Examples: examples.md
+      - API Reference:
+          - Auth: api/auth.md
+          - Client: api/client.md
+          - Models: api/models.md
   - Development Resources:
     - Contributing: contributing.md
     - Architecture Notes: internal_architecture.md
