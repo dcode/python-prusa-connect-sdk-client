@@ -38,15 +38,11 @@ app.command(auth.auth_app)
 
 @app.meta.default
 def entry_point(
-    tokens: typing.Annotated[
-        list[str], cyclopts.Parameter(show=False, allow_leading_hyphen=True)
-    ],
+    tokens: typing.Annotated[list[str], cyclopts.Parameter(show=False, allow_leading_hyphen=True)],
     verbose: typing.Annotated[
         bool, cyclopts.Parameter(name=["--verbose", "-v"], help="Enable verbose logging")
     ] = False,
-    debug: typing.Annotated[
-        bool, cyclopts.Parameter(name=["--debug"], help="Enable debug logging")
-    ] = False,
+    debug: typing.Annotated[bool, cyclopts.Parameter(name=["--debug"], help="Enable debug logging")] = False,
 ):
     """Main entry point handling global flags."""
     # Configure logging
