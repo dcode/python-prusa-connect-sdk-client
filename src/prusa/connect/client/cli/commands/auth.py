@@ -37,7 +37,7 @@ def login_command():
         return Prompt.ask("Enter 2FA/TOTP Code")
 
     try:
-        token_data = auth.interactive_login(email, str(password), otp_callback=otp_callback)
+        token_data = auth.interactive_login(str(email), str(password), otp_callback=otp_callback)
 
         def save_tokens(data):
             path = config.settings.tokens_file
