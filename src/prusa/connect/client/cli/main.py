@@ -1,6 +1,7 @@
 """Main entry point for the CLI."""
 
 import sys
+import typing
 
 import cyclopts
 
@@ -32,7 +33,32 @@ app.command(job.jobs_alias, name="jobs")
 app.command(file.files_alias, name="files")
 app.command(team.teams_alias, name="teams")
 app.command(api.api_command, name="api")
-app.command(auth.auth_command, name="auth")
+app.command(auth.auth_app)
+
+
+@app.meta.default
+def entry_point(
+    tokens: typing.Annotated[
+        list[str], cyclopts.Parameter(show=False, allow_leading_hyphen=True)
+    ],
+    verbose: typing.Annotated[
+        bool, cyclopts.Parameter(name=["--verbose", "-v"], help="Enable verbose logging")
+    ] = False,
+    debug: typing.Annotated[
+        bool, cyclopts.Parameter(name=["--debug"], help="Enable debug logging")
+    ] = False,
+):
+    """Main entry point handling global flags."""
+    # Configure logging
+    common.configure_logging(verbose, debug)
+
+    # Let cyclopts handle the full command parsing (subcommands, help, etc)
+    try:
+        app(tokens)
+    except cyclopts.exceptions.CycloptsError as e:
+        # Standard cyclopts error handling
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main(args: list[str] | None = None):
@@ -40,28 +66,9 @@ def main(args: list[str] | None = None):
     if args is None:
         args = sys.argv[1:]
 
-    # Handle global logging flags early and robustly.
-    # We use argparse.parse_known_args to extract just the flags we care about
-    # without failing on unknown subcommand flags (like --detailed).
-    import argparse
-
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("--no-verbose", dest="verbose", action="store_false")
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--no-debug", dest="debug", action="store_false")
-    parser.set_defaults(verbose=False, debug=False)
-
-    parsed_globals, remaining = parser.parse_known_args(args)
-
-    # Configure logging
-    common.configure_logging(parsed_globals.verbose, parsed_globals.debug)
-
-    # Let cyclopts handle the full command parsing (subcommands, help, etc)
     try:
-        app(remaining)
+        app.meta(args)
     except cyclopts.exceptions.CycloptsError as e:
-        # Standard cyclopts error handling
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
