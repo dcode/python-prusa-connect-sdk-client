@@ -27,7 +27,7 @@ jobs:
       - name: Install project
         run: uv sync --frozen --all-extras --all-groups
       - name: Cache mkdocs-material optimize
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           key: mkdocs-material-optimize-${{ hashFiles('mkdocs.yml') }}
           path: .cache/plugin/optimize
