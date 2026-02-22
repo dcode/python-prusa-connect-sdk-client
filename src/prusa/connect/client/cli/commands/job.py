@@ -86,7 +86,7 @@ def job_list(
         table.add_row(
             str(j.id),
             j.printer_uuid or "Unknown",
-            j.state or "Unknown",
+            j.state.name,
             j.file.name if j.file else "Unknown",
             f"{j.progress}%" if j.progress is not None else "N/A",
             ended_str,

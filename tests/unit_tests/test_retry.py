@@ -52,7 +52,7 @@ def test_retry_on_final_failure(mock_send, client):
     # Simulate MaxRetryError from urllib3 which requests wraps into RetryError
     mock_send.side_effect = RetryError("Max retries exceeded")
 
-    with pytest.raises(PrusaNetworkError) as exc:
+    with pytest.raises(PrusaNetworkError) as exc, pytest.warns(DeprecationWarning, match="get_printers"):
         client.get_printers()
 
     assert "Failed to connect" in str(exc.value)

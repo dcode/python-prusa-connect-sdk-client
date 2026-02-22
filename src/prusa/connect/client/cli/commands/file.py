@@ -11,6 +11,7 @@ from prusa.connect.client.cli import common, config
 file_app = cyclopts.App(name="file", help="File management (Connect/Team level)")
 
 
+@file_app.command(name="list")
 def file_list(
     team_id: typing.Annotated[int | None, cyclopts.Parameter(help="Team ID to list files for")] = None,
 ):

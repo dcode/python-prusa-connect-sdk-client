@@ -1,22 +1,27 @@
 """Raw API request commands."""
 
+from __future__ import annotations
+
 import json
-import pathlib
+import pathlib  # noqa: TC003
 import sys
 import typing
 
 import cyclopts
+import requests  # noqa: TC002
 from rich import print as rprint
 
 from prusa.connect.client.cli import common
 
 
 def api_command(
-    path: typing.Annotated[str, cyclopts.Parameter(help="API endpoint (e.g. /printers)")],
+    path: typing.Annotated[str, cyclopts.Parameter(help="API endpoint (e.g. /app/printers)")],
     method: typing.Annotated[str, cyclopts.Parameter(help="HTTP Method")] = "GET",
     data: typing.Annotated[str | None, cyclopts.Parameter(help="JSON data body")] = None,
     output: typing.Annotated[pathlib.Path | None, cyclopts.Parameter(help="Output file for response")] = None,
     stream: typing.Annotated[bool, cyclopts.Parameter(help="Stream response (useful for large files)")] = False,
+    response_headers: typing.Annotated[bool, cyclopts.Parameter(help="Print response headers", alias=["-h"])] = False,
+    response_body: typing.Annotated[bool, cyclopts.Parameter(help="Print response body", alias=["-b"])] = True,
 ):
     """Make a raw authenticated API request."""
     common.logger.debug(
@@ -39,10 +44,15 @@ def api_command(
 
     # Use raw=True if output is specified OR stream is True
     # If streaming, we MUST use raw to get the response object
-    raw_mode = (output is not None) or stream
 
     try:
-        res = client._request(method, path, raw=raw_mode, **kwargs)
+        res: requests.Response = client._request(method, path, raw=True, **kwargs)
+
+        if response_headers:
+            rprint(f"{getattr(res, 'status_code', None)} {getattr(res, 'reason', None)}")
+            for k, v in res.headers.items():
+                rprint(f"[bold]{k}:[/bold] {v}")
+            rprint("")
 
         if stream:
             # Handle streaming
@@ -57,22 +67,36 @@ def api_command(
                     sys.stdout.buffer.write(chunk)
             return
 
+        content_type = res.headers.get("Content-Type", "")
         # Normal (non-stream) handling
         if output:
             if str(output) == "-":
-                if hasattr(res, "content"):
-                    sys.stdout.buffer.write(res.content)
+                if "application/json" in content_type.lower():
+                    sys.stdout.write(json.dumps(res.json()))
                 else:
-                    print(json.dumps(res, indent=2))
+                    if hasattr(res, "text"):
+                        sys.stdout.write(res.text)
+                    else:
+                        sys.stdout.buffer.write(res.content)
             else:
-                if hasattr(res, "content"):
-                    output.write_bytes(res.content)
-                else:
+                if "application/json" in content_type.lower():
                     with open(output, "w") as f:
-                        json.dump(res, f, indent=2)
+                        json.dump(res.json(), f)
+                else:
+                    if hasattr(res, "text"):
+                        with open(output, "w") as f:
+                            f.write(res.text)
+                    else:
+                        output.write_bytes(res.content)
                 rprint(f"[green]Response saved to {output}[/green]")
         else:
-            rprint(res)
+            if response_body:
+                if "application/json" in content_type.lower():
+                    print(json.dumps(res.json()))
+                elif "text" in content_type.lower():
+                    print(res.text)
+                else:
+                    sys.stdout.buffer.write(res.content)
 
     except Exception as e:
         if (output and str(output) == "-") or stream:

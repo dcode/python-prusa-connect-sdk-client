@@ -9,7 +9,7 @@ APP_NAME = "prusa-connect"
 APP_AUTHOR = "Prusa"
 
 # API Defaults
-DEFAULT_BASE_URL = "https://connect.prusa3d.com/app"
+DEFAULT_BASE_URL = "https://connect.prusa3d.com/"
 DEFAULT_TIMEOUT = 30.0
 
 # Authentication Endpoints

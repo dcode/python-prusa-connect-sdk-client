@@ -29,7 +29,8 @@ def test_get_printers_caching(tmp_path):
 
     with patch.object(client, "_request", return_value=mock_response) as mock_req:
         # 1. First call - should hit API
-        printers = client.get_printers()
+        with pytest.warns(DeprecationWarning, match="get_printers"):
+            printers = client.get_printers()
         assert len(printers) == 1
         assert printers[0].uuid == "uuid1"
         assert mock_req.call_count == 1
@@ -40,7 +41,8 @@ def test_get_printers_caching(tmp_path):
 
         # 2. Second call (with API failure) - should use cache
         mock_req.side_effect = Exception("API Down")
-        printers_cached = client.get_printers()
+        with pytest.warns(DeprecationWarning, match="get_printers"):
+            printers_cached = client.get_printers()
         assert len(printers_cached) == 1
         assert printers_cached[0].uuid == "uuid1"
 

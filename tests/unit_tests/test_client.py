@@ -32,7 +32,8 @@ def test_get_printers_success(client):
     )
 
     # 2. Call the method
-    printers = client.get_printers()
+    with pytest.warns(DeprecationWarning, match="get_printers"):
+        printers = client.get_printers()
 
     # 3. Assertions
     assert len(printers) == 1
@@ -46,5 +47,5 @@ def test_get_printers_success(client):
 def test_auth_failure_raises_exception(client):
     responses.add(responses.GET, "https://connect.prusa3d.com/app/printers", status=401)
 
-    with pytest.raises(PrusaAuthError):
+    with pytest.raises(PrusaAuthError), pytest.warns(DeprecationWarning, match="get_printers"):
         client.get_printers()
