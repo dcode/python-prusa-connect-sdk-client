@@ -24,6 +24,8 @@ def mock_client():
         patch("prusa.connect.client.cli.commands.file.common.get_client") as f_mock,
     ):
         client = MagicMock(spec=PrusaConnectClient)
+        client.printers = MagicMock()
+        client.teams = MagicMock()
         p_mock.return_value = client
         f_mock.return_value = client
         yield client
@@ -37,7 +39,7 @@ def mock_settings():
 
 
 def test_printer_list(mock_client):
-    mock_client.get_printers.return_value = [Printer.model_validate(SAMPLE_PRINTER)]
+    mock_client.printers.list_printers.return_value = [Printer.model_validate(SAMPLE_PRINTER)]
 
     with contextlib.suppress(SystemExit):
         app(["printer", "list"], exit_on_error=False)
@@ -50,26 +52,26 @@ def test_printer_list(mock_client):
     with contextlib.suppress(SystemExit):
         app(["printer", "list", "--pattern", "MK*"], exit_on_error=False)
 
-    assert mock_client.get_printers.call_count == 3
+    assert mock_client.printers.list_printers.call_count == 3
 
 
 def test_printer_pause_resume(mock_client, mock_settings):
-    mock_client.send_command.return_value = True
+    mock_client.printers.send_command.return_value = True
 
     # Explicit ID
     with contextlib.suppress(SystemExit):
         app(["printer", "pause", "printer-1"], exit_on_error=False)
-    mock_client.send_command.assert_called_with("printer-1", "PAUSE_PRINT")
+    mock_client.printers.send_command.assert_called_with("printer-1", "PAUSE_PRINT")
 
     # Default ID
     with contextlib.suppress(SystemExit):
         app(["printer", "resume"], exit_on_error=False)
-    mock_client.send_command.assert_called_with("default-uuid", "RESUME_PRINT")
+    mock_client.printers.send_command.assert_called_with("default-uuid", "RESUME_PRINT")
 
 
 def test_printer_stop(mock_client, mock_settings):
     mock_client.stop_print.return_value = True
-    mock_client.get_printer.return_value = Printer.model_validate({**SAMPLE_PRINTER, "job_info": {"id": 123}})
+    mock_client.printers.get.return_value = Printer.model_validate({**SAMPLE_PRINTER, "job_info": {"id": 123}})
     mock_client.set_job_failure_reason.return_value = True
 
     # Simple stop
@@ -167,8 +169,8 @@ def test_printer_files_list(mock_client, mock_settings):
 
 def test_printer_files_upload_download(mock_client, mock_settings, tmp_path):
     # Setup mocks for printer details and teams
-    mock_client.get_printer.return_value = Printer.model_validate(SAMPLE_PRINTER)
-    mock_client.get_teams.return_value = [Team(id=1, name="Team A")]
+    mock_client.printers.get.return_value = Printer.model_validate(SAMPLE_PRINTER)
+    mock_client.teams.list_teams.return_value = [Team(id=1, name="Team A")]
     mock_client.initiate_team_upload.return_value = models.UploadStatus(
         id=99, team_id=1, name="f.gcode", size=10, state="STARTED"
     )

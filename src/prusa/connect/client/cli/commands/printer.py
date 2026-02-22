@@ -23,7 +23,7 @@ def _send_printer_command(printer_ids: list[str], command: str):
 
     for pid in printer_ids:
         try:
-            if client.send_command(pid, command):
+            if client.printers.send_command(pid, command):
                 rprint(f"[green]Sent {command} to {pid}[/green]")
         except Exception as e:
             rprint(f"[red]Failed to send {command} to {pid}: {e}[/red]")
@@ -36,7 +36,7 @@ def printer_list(
     """List all printers associated with the account."""
     common.logger.debug("Command started", command="printer list", pattern=pattern)
     client = common.get_client()
-    printers = client.get_printers()
+    printers = client.printers.list_printers()
     common.logger.info("Found printers", count=len(printers))
 
     table = Table(title="Printers")
@@ -88,7 +88,7 @@ def printer_show(
     client = common.get_client()
 
     try:
-        p = client.get_printer(resolved_id)
+        p = client.printers.get(resolved_id)
 
         # Basic Info Table
         table = Table(title=f"Printer: {p.name}")
@@ -288,7 +288,7 @@ def printer_stop(
                     # We need the current job ID to set the reason
                     # Fetch printer status to get job ID
                     try:
-                        p = client.get_printer(pid)
+                        p = client.printers.get(pid)
                         if p.job and p.job.id:
                             # Validate reason string against Enum
 
@@ -702,8 +702,8 @@ def printer_files_upload(
 
     client = common.get_client()
     try:
-        p = client.get_printer(resolved_id)
-        teams = client.get_teams()
+        p = client.printers.get(resolved_id)
+        teams = client.teams.list_teams()
         # Find team by team_name
         target_team = next((t for t in teams if t.name == p.team_name), None)
         if not target_team and teams:
@@ -740,8 +740,8 @@ def printer_files_download(
 
     client = common.get_client()
     try:
-        p = client.get_printer(resolved_id)
-        teams = client.get_teams()
+        p = client.printers.get(resolved_id)
+        teams = client.teams.list_teams()
         target_team = next((t for t in teams if t.name == p.team_name), None)
         if not target_team and teams:
             target_team = teams[0]

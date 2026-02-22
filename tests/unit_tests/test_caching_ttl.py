@@ -104,11 +104,8 @@ def test_cache_ttl_expiration_printers(mock_client, mock_cache_dir):
     mock_client._session.request.side_effect = Exception("Network Down")
 
     # This should trigger a network call because cache is expired
-    with (
-        pytest.warns(DeprecationWarning, match="get_printers"),
-        pytest.raises(Exception, match="Network Down"),
-    ):
-        mock_client.get_printers()
+    with pytest.raises(Exception, match="Network Down"):
+        mock_client.printers.list_printers()
 
 
 def test_cache_ttl_valid_printers_fallback(mock_client, mock_cache_dir):
@@ -126,7 +123,6 @@ def test_cache_ttl_valid_printers_fallback(mock_client, mock_cache_dir):
     mock_client._session.request.side_effect = Exception("Network Down")
 
     # Execute    # Should read from cache despite network error
-    with pytest.warns(DeprecationWarning, match="get_printers"):
-        printers = mock_client.get_printers()
+    printers = mock_client.printers.list_printers()
     assert len(printers) == 1
     assert printers[0].name == "Cached"

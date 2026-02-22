@@ -17,7 +17,7 @@ team_app = cyclopts.App(name="team", help="Team management")
 def list_teams():
     """List all teams the user belongs to."""
     client = common.get_client()
-    teams = client.get_teams()
+    teams = client.teams.list_teams()
 
     table = Table(title="Teams")
     table.add_column("ID", style="cyan")
@@ -50,7 +50,7 @@ def show_team(
 
     client = common.get_client()
     try:
-        team = client.get_team(team_id_to_use)
+        team = client.teams.get(team_id_to_use)
     except Exception as e:
         rprint(f"[red]Error fetching team {team_id_to_use}: {e}[/red]")
         sys.exit(1)

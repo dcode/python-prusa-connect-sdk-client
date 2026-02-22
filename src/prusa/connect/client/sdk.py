@@ -6,14 +6,13 @@ handling authentication, error parsing, connection pooling, and response validat
 How to use the most important parts:
 - `PrusaConnectClient`: The core class. Instantiate it (optionally with `PrusaConnectCredentials`) to begin
   controlling printers.
-- Look at the methods available on `PrusaConnectClient`, such as `get_printers()`, `send_command(...)`,
-  and `get_team_users(...)`, for an exhaustive list of actions supported.
+- Access resources via the service attributes: `client.printers`, `client.teams`, `client.cameras`,
+  `client.files`, `client.jobs`, and `client.stats`.
 """
 
 import collections.abc
 import datetime
 import typing
-import warnings
 from pathlib import Path
 
 import pydantic
@@ -70,9 +69,17 @@ class PrusaConnectClient:
         >>> from prusa.connect.client import PrusaConnectClient
         >>> # Assume you have a credentials object
         >>> client = PrusaConnectClient(credentials=my_creds)
-        >>> printers = client.get_printers()
+        >>> printers = client.printers.list_printers()
     ```
     """
+
+    # Service attribute annotations (instance attributes set in __init__)
+    printers: "printers.PrinterService"
+    files: "files.FileService"
+    teams: "teams.TeamService"
+    cameras: "cameras.CameraService"
+    jobs: "jobs.JobService"
+    stats: "stats.StatsService"
 
     def __init__(
         self,
@@ -350,39 +357,6 @@ class PrusaConnectClient:
         """
         return self._request(method, endpoint, **kwargs)
 
-    def get_printers(self, limit: int = 100, offset: int = 0) -> list[models.Printer]:
-        """Fetch all printers associated with the account.
-
-        Args:
-            limit: Maximum number of printers to return.
-            offset: Number of printers to skip.
-
-        Returns:
-            A list of `Printer` objects.
-        """
-        warnings.warn(
-            "get_printers() is deprecated. Use client.printers.list() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.printers.list_printers(limit=limit, offset=offset)
-
-    def get_printer(self, uuid: str) -> models.Printer:
-        """Fetch details for a specific printer.
-
-        Args:
-            uuid: The UUID of the printer.
-
-        Returns:
-            A `Printer` object containing detailed telemetry and state.
-        """
-        warnings.warn(
-            "get_printer() is deprecated. Use client.printers.get() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.printers.get(uuid)
-
     def get_file_list(self, team_id: int) -> list[models.File]:
         """Fetch files for a specific team.
 
@@ -444,56 +418,6 @@ class PrusaConnectClient:
             The binary content of the file.
         """
         return self.files.download(team_id, file_hash)
-
-    def get_cameras(self, limit: int = 50, offset: int = 0) -> list[models.Camera]:
-        """Fetch all cameras.
-
-        Args:
-            limit: Maximum number of teams to return.
-            offset: Number of teams to skip.
-
-        Returns:
-            A list of `Camera` objects.
-        """
-        warnings.warn(
-            "get_cameras() is deprecated. Use client.cameras.list() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.cameras.list(limit, offset)
-
-    def get_teams(self, limit: int = 50, offset: int = 0) -> list[models.Team]:
-        """Fetch all teams associated with the account.
-
-        Args:
-            limit: Maximum number of teams to return.
-            offset: Number of teams to skip.
-
-        Returns:
-            A list of `Team` objects.
-        """
-        warnings.warn(
-            "get_teams() is deprecated. Use client.teams.list_teams() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.teams.list_teams(limit, offset)
-
-    def get_team(self, team_id: int) -> models.Team:
-        """Fetch detailed information for a specific team.
-
-        Args:
-            team_id: The ID of the team.
-
-        Returns:
-            A `Team` object.
-        """
-        warnings.warn(
-            "get_team() is deprecated. Use client.teams.get() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.teams.get(team_id)
 
     def get_team_users(self, team_id: int) -> list[models.TeamUser]:
         """Fetch all users associated with a team.
@@ -640,24 +564,6 @@ class PrusaConnectClient:
             A `JobsSuccess` object.
         """
         return self.stats.get_jobs_success(printer_uuid, from_time, to_time)
-
-    def send_command(self, printer_uuid: str, command: str, kwargs: dict | None = None) -> bool:
-        """Send a command to a printer.
-
-        Args:
-            printer_uuid: The printer UUID.
-            command: The command string (e.g., 'PAUSE_PRINT', 'MOVE_Z').
-            kwargs: Optional arguments for the command.
-
-        Returns:
-            True if the command was successfully sent.
-        """
-        warnings.warn(
-            "send_command() is deprecated. Use client.printers.send_command() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.printers.send_command(printer_uuid, command, kwargs)
 
     def get_supported_commands(self, printer_uuid: str) -> list[command_models.CommandDefinition]:
         """Fetch supported commands for a printer.

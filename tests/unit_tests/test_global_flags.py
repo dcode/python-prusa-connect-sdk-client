@@ -25,8 +25,6 @@ def test_logging_levels(args, expected_level):
     with (
         patch("prusa.connect.client.cli.common.structlog.make_filtering_bound_logger") as mock_maker,
         contextlib.suppress(SystemExit),
-        # We expect deprecation warnings because the CLI commands use deprecated client methods
-        pytest.warns(DeprecationWarning, match="get_printers"),
     ):
         main(args)
 

@@ -29,6 +29,7 @@ SAMPLE_CAMERA_DATA = {
 def mock_client():
     with patch("prusa.connect.client.cli.commands.camera.common.get_client") as mock:
         client = MagicMock(spec=PrusaConnectClient)
+        client.cameras = MagicMock()
         mock.return_value = client
         yield client
 
@@ -36,7 +37,7 @@ def mock_client():
 def test_cli_camera_show(mock_client):
     """Verify camera show command calls get_cameras and exit gracefully."""
     camera = Camera.model_validate(SAMPLE_CAMERA_DATA)
-    mock_client.get_cameras.return_value = [camera]
+    mock_client.cameras.list.return_value = [camera]
 
     # Test showing by ID
     with contextlib.suppress(SystemExit):
@@ -50,21 +51,21 @@ def test_cli_camera_show(mock_client):
     with contextlib.suppress(SystemExit):
         app(["camera", "show", "Buddy3D Camera"], exit_on_error=False)
 
-    assert mock_client.get_cameras.call_count == 3
+    assert mock_client.cameras.list.call_count == 3
 
 
 def test_cli_camera_list(mock_client):
-    mock_client.get_cameras.return_value = [models.Camera(id=1, name="Cam1", token="tok1")]
+    mock_client.cameras.list.return_value = [models.Camera(id=1, name="Cam1", token="tok1")]
     with contextlib.suppress(SystemExit):
         app(["camera", "list"], exit_on_error=False)
     # Alias
     with contextlib.suppress(SystemExit):
         app(["cameras"], exit_on_error=False)
-    assert mock_client.get_cameras.call_count == 2
+    assert mock_client.cameras.list.call_count == 2
 
 
 def test_cli_camera_snapshot(mock_client, tmp_path):
-    mock_client.get_cameras.return_value = [models.Camera(id=123, name="Cam1")]
+    mock_client.cameras.list.return_value = [models.Camera(id=123, name="Cam1")]
     mock_client.get_snapshot.return_value = b"jpegdata"
     out_file = tmp_path / "snap.jpg"
     with contextlib.suppress(SystemExit):
@@ -74,7 +75,7 @@ def test_cli_camera_snapshot(mock_client, tmp_path):
 
 
 def test_cli_camera_trigger(mock_client):
-    mock_client.get_cameras.return_value = [models.Camera(id=1, token="tok1")]
+    mock_client.cameras.list.return_value = [models.Camera(id=1, token="tok1")]
     mock_client.trigger_snapshot.return_value = True
     with contextlib.suppress(SystemExit):
         app(["camera", "trigger", "1"], exit_on_error=False)
@@ -82,7 +83,7 @@ def test_cli_camera_trigger(mock_client):
 
 
 def test_cli_camera_move(mock_client):
-    mock_client.get_cameras.return_value = [models.Camera(id=1, token="tok1")]
+    mock_client.cameras.list.return_value = [models.Camera(id=1, token="tok1")]
     mock_cam_client = MagicMock()
     mock_client.get_camera_client.return_value = mock_cam_client
     with contextlib.suppress(SystemExit):
@@ -92,7 +93,7 @@ def test_cli_camera_move(mock_client):
 
 
 def test_cli_camera_adjust(mock_client):
-    mock_client.get_cameras.return_value = [models.Camera(id=1, token="tok1")]
+    mock_client.cameras.list.return_value = [models.Camera(id=1, token="tok1")]
     mock_cam_client = MagicMock()
     mock_client.get_camera_client.return_value = mock_cam_client
     with contextlib.suppress(SystemExit):
@@ -114,17 +115,17 @@ def test_cli_camera_set_current():
 def test_cli_camera_show_detailed(mock_client):
     """Verify camera show --detailed command."""
     camera = Camera.model_validate(SAMPLE_CAMERA_DATA)
-    mock_client.get_cameras.return_value = [camera]
+    mock_client.cameras.list.return_value = [camera]
 
     with contextlib.suppress(SystemExit):
         app(["camera", "show", "123456", "--detailed"], exit_on_error=False)
 
-    assert mock_client.get_cameras.called
+    assert mock_client.cameras.list.called
 
 
 def test_cli_camera_show_not_found(mock_client):
     """Verify camera show handles non-existent cameras."""
-    mock_client.get_cameras.return_value = []
+    mock_client.cameras.list.return_value = []
 
     with pytest.raises(SystemExit) as e:
         app(["camera", "show", "nonexistent"], exit_on_error=False)

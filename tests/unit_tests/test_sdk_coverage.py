@@ -114,8 +114,7 @@ def test_get_cameras(client):
         json={"cameras": [{"id": 1, "name": "Camera 1"}]},
         status=200,
     )
-    with pytest.warns(DeprecationWarning, match="get_cameras"):
-        cameras = client.get_cameras()
+    cameras = client.cameras.list()
     assert len(cameras) == 1
     assert cameras[0].name == "Camera 1"
 
@@ -124,19 +123,17 @@ def test_get_cameras(client):
         responses.GET, "https://connect.prusa3d.com/app/cameras-list", json=[{"id": 2, "name": "Camera 2"}], status=200
     )
     # We need to manually call it or change the mock if we want to hit the branch
-    # But get_cameras uses "/cameras"
+    # But cameras.list uses "/cameras"
     responses.replace(
         responses.GET, "https://connect.prusa3d.com/app/cameras", json=[{"id": 2, "name": "Camera 2"}], status=200
     )
-    with pytest.warns(DeprecationWarning, match="get_cameras"):
-        cameras2 = client.get_cameras()
+    cameras2 = client.cameras.list()
     assert len(cameras2) == 1
     assert cameras2[0].name == "Camera 2"
 
     # Test empty/unexpected response
     responses.replace(responses.GET, "https://connect.prusa3d.com/app/cameras", json={"something_else": []}, status=200)
-    with pytest.warns(DeprecationWarning, match="get_cameras"):
-        assert client.get_cameras() == []
+    assert client.cameras.list() == []
 
 
 @responses.activate
@@ -144,8 +141,7 @@ def test_get_teams_and_users(client):
     responses.add(
         responses.GET, "https://connect.prusa3d.com/app/users/teams", json=[{"id": 1, "name": "Team A"}], status=200
     )
-    with pytest.warns(DeprecationWarning, match="get_teams"):
-        teams = client.get_teams()
+    teams = client.teams.list_teams()
     assert len(teams) == 1
     assert teams[0].name == "Team A"
 
@@ -168,8 +164,7 @@ def test_get_teams_and_users(client):
         },
         status=200,
     )
-    with pytest.warns(DeprecationWarning, match="get_team"):
-        team = client.get_team(1)
+    team = client.teams.get(1)
     assert team.name == "Team A"
 
     users = client.get_team_users(1)
@@ -467,8 +462,7 @@ def test_cache_save_error_handling(client, tmp_path):
     )
 
     # Should not crash even if cache saving fails
-    with pytest.warns(DeprecationWarning, match="get_printers"):
-        printers = client_bad_cache.get_printers()
+    printers = client_bad_cache.printers.list_printers()
     assert len(printers) == 1
 
 

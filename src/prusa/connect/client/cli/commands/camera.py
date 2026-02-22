@@ -18,7 +18,7 @@ def camera_list():
     """List all cameras."""
     common.logger.debug("Command started", command="camera list")
     client = common.get_client()
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
 
     table = Table(title="Cameras")
     table.add_column("Name", style="cyan")
@@ -51,7 +51,7 @@ def camera_snapshot(
     client = common.get_client()
 
     # We look up the camera to get ID
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
 
     real_id = camera_id
@@ -86,7 +86,7 @@ def camera_trigger(
     client = common.get_client()
 
     # We look up to get token
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
 
     real_token = camera_id
@@ -113,7 +113,7 @@ def camera_move(
     client = common.get_client()
 
     # Resolve token
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
     token = match.token if match and match.token else camera_id
 
@@ -139,7 +139,7 @@ def camera_adjust(
     client = common.get_client()
 
     # Resolve token
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
     token = match.token if match and match.token else camera_id
 
@@ -182,7 +182,7 @@ def camera_show(
     common.logger.debug("Command started", command="camera show", camera_id=camera_id, detailed=detailed)
     client = common.get_client()
 
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
 
     if not match:

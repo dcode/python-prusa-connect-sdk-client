@@ -22,6 +22,7 @@ SAMPLE_JOB = {
 def mock_client():
     with patch("prusa.connect.client.cli.commands.job.common.get_client") as mock:
         client = MagicMock(spec=PrusaConnectClient)
+        client.printers = MagicMock()
         mock.return_value = client
         yield client
 
@@ -52,14 +53,14 @@ def test_job_list_team(mock_client):
 
 
 def test_job_list_aggregate(mock_client):
-    # Mocking get_printers and then get_printer_jobs for each
-    mock_client.get_printers.return_value = [Printer.model_validate({"uuid": "p1", "name": "Pr1"})]
+    # Mocking printers.list_printers and then get_printer_jobs for each
+    mock_client.printers.list_printers.return_value = [Printer.model_validate({"uuid": "p1", "name": "Pr1"})]
     mock_client.get_printer_jobs.return_value = [Job.model_validate(SAMPLE_JOB)]
 
     with contextlib.suppress(SystemExit):
         app(["job", "list"], exit_on_error=False)
 
-    mock_client.get_printers.assert_called()
+    mock_client.printers.list_printers.assert_called()
     mock_client.get_printer_jobs.assert_called()
 
 

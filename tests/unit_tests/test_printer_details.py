@@ -93,6 +93,7 @@ def test_printer_model_parsing():
 def mock_client():
     with patch("prusa.connect.client.cli.commands.printer.common.get_client") as mock:
         client = MagicMock(spec=PrusaConnectClient)
+        client.printers = MagicMock()
         mock.return_value = client
         yield client
 
@@ -100,22 +101,22 @@ def mock_client():
 def test_cli_printer_show(mock_client):
     """Verify printer show command runs and likely outputs some of our new fields."""
     printer = Printer.model_validate(SAMPLE_PRINTER_DETAILS)
-    mock_client.get_printer.return_value = printer
+    mock_client.printers.get.return_value = printer
 
     # Run simple show
     with contextlib.suppress(SystemExit):
         app(["printer", "show", "uuid"], exit_on_error=False)
 
-    mock_client.get_printer.assert_called_with("uuid")
+    mock_client.printers.get.assert_called_with("uuid")
 
 
 def test_cli_printer_show_detailed(mock_client):
     """Verify printer show --detailed command."""
     printer = Printer.model_validate(SAMPLE_PRINTER_DETAILS)
-    mock_client.get_printer.return_value = printer
+    mock_client.printers.get.return_value = printer
 
     # Run detailed show
     with contextlib.suppress(SystemExit):
         app(["printer", "show", "uuid", "--detailed"], exit_on_error=False)
 
-    mock_client.get_printer.assert_called_with("uuid")
+    mock_client.printers.get.assert_called_with("uuid")

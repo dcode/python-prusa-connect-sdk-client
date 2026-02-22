@@ -14,6 +14,7 @@ SAMPLE_TEAM = {"id": 1, "name": "Team A", "role": "OWNER", "organization_id": "0
 def mock_client():
     with patch("prusa.connect.client.cli.commands.team.common.get_client") as mock:
         client = MagicMock(spec=PrusaConnectClient)
+        client.teams = MagicMock()
         mock.return_value = client
         yield client
 
@@ -26,7 +27,7 @@ def mock_settings():
 
 
 def test_team_list(mock_client):
-    mock_client.get_teams.return_value = [Team.model_validate(SAMPLE_TEAM)]
+    mock_client.teams.list_teams.return_value = [Team.model_validate(SAMPLE_TEAM)]
 
     with contextlib.suppress(SystemExit):
         app(["team", "list"], exit_on_error=False)
@@ -35,17 +36,17 @@ def test_team_list(mock_client):
     with contextlib.suppress(SystemExit):
         app(["teams"], exit_on_error=False)
 
-    assert mock_client.get_teams.call_count == 2
+    assert mock_client.teams.list_teams.call_count == 2
 
 
 def test_team_show(mock_client, mock_settings):
     team_data = {**SAMPLE_TEAM, "users": [{"id": 100, "username": "u1", "email": "u1@e.com", "rights_ro": True}]}
-    mock_client.get_team.return_value = Team.model_validate(team_data)
+    mock_client.teams.get.return_value = Team.model_validate(team_data)
 
     with contextlib.suppress(SystemExit):
         app(["team", "show"], exit_on_error=False)
 
-    mock_client.get_team.assert_called_with(1)
+    mock_client.teams.get.assert_called_with(1)
 
 
 def test_team_add_user(mock_client, mock_settings):
