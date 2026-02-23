@@ -16,11 +16,11 @@ from prusa.connect.client import PrusaConnectClient
 
 client = PrusaConnectClient()
 
-# Get your printer's UUID (e.g., from client.get_printers())
+# Get your printer's UUID (e.g., from client.printers.list_printers())
 printer_uuid = "c0ffee-uuid-1234"
 
 # Pause the print
-client.send_command(printer_uuid, "PAUSE_PRINT")
+client.pause_print(printer_uuid)
 print("Printer paused.")
 ```
 
@@ -32,7 +32,7 @@ Fetch the latest snapshot from your printer's camera.
 from prusa.connect.client import PrusaConnectClient
 
 client = PrusaConnectClient()
-cameras = client.get_cameras()
+cameras = client.cameras.list()
 
 if cameras:
     cam = cameras[0]
@@ -54,10 +54,10 @@ List files on your team's storage.
 from prusa.connect.client import PrusaConnectClient
 
 client = PrusaConnectClient()
-teams = client.get_teams()
+teams = client.teams.list_teams()
 if teams:
     my_team_id = teams[0].id
-    files = client.get_file_list(my_team_id)
+    files = client.files.list(my_team_id)
 
     for file in files:
         print(f"{file.name} ({file.size.human_readable() if file.size else 'N/A'})")

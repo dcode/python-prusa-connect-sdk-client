@@ -1,12 +1,12 @@
 [project]
-name = "prusa-connect-sdk-client" # Normalized per https://packaging.python.org/en/latest/specifications/name-normalization/
+name = "prusa-connect-sdk-client"
 description = "Unoriginal Prusa Connect API client for Python and CLI"
 readme = "README.md"
 authors = [
   { name = "Derek Ditch", email = "dcode@users.noreply.github.com"}
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
   "Programming Language :: Python :: 3",
@@ -108,7 +108,7 @@ packages = ["src/prusa"]
 
 [tool.hatch.envs.default]
 installer = "uv"
-env-vars = { "UV_DEFAULT_INDEX" = "https://pypi.org/simple/" }
+env-vars = { "UV_DEFAULT_INDEX" = "https://pypi.org/simple" }
 features = ["cli"]
 
 [tool.hatch.build.hooks.protobuf]
