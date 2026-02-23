@@ -15,6 +15,7 @@ from prusa.connect.client.models import Job, Printer, PrintFile  # noqa: E402
 def mock_client():
     with patch("prusa.connect.client.cli.commands.job.common.get_client") as mock:
         client = MagicMock(spec=PrusaConnectClient)
+        client.printers = MagicMock()
         mock.return_value = client
         yield client
 
@@ -29,7 +30,7 @@ def test_get_printers_caching(tmp_path):
 
     with patch.object(client, "_request", return_value=mock_response) as mock_req:
         # 1. First call - should hit API
-        printers = client.get_printers()
+        printers = client.printers.list_printers()
         assert len(printers) == 1
         assert printers[0].uuid == "uuid1"
         assert mock_req.call_count == 1
@@ -40,7 +41,7 @@ def test_get_printers_caching(tmp_path):
 
         # 2. Second call (with API failure) - should use cache
         mock_req.side_effect = Exception("API Down")
-        printers_cached = client.get_printers()
+        printers_cached = client.printers.list_printers()
         assert len(printers_cached) == 1
         assert printers_cached[0].uuid == "uuid1"
 
@@ -71,7 +72,10 @@ def test_job_filtering():
 
 def test_cli_job_list_aggregation(mock_client):
     # Setup mocks
-    mock_client.get_printers.return_value = [Printer(uuid="p1", name="Printer 1"), Printer(uuid="p2", name="Printer 2")]
+    mock_client.printers.list_printers.return_value = [
+        Printer(uuid="p1", name="Printer 1"),
+        Printer(uuid="p2", name="Printer 2"),
+    ]
 
     mock_client.get_printer_jobs.side_effect = [
         [Job(id=1, state="FINISHED", end=100, file=PrintFile(name="j1", path="p"))],  # p1
@@ -89,14 +93,14 @@ def test_cli_job_list_aggregation(mock_client):
         app(["job", "list"], exit_on_error=False)
 
     # Verify aggregation
-    assert mock_client.get_printers.called
+    assert mock_client.printers.list_printers.called
     assert mock_client.get_printer_jobs.call_count == 2
     mock_client.get_printer_jobs.assert_any_call("p1", state=None, limit=None)
     mock_client.get_printer_jobs.assert_any_call("p2", state=None, limit=None)
 
 
 def test_cli_job_queued(mock_client):
-    mock_client.get_printers.return_value = [Printer(uuid="p1", name="Printer 1")]
+    mock_client.printers.list_printers.return_value = [Printer(uuid="p1", name="Printer 1")]
 
     # Mock return of get_printer_queue calling the API internally?
     # Actually we mock the client method, so we should test the client method separately
@@ -109,7 +113,7 @@ def test_cli_job_queued(mock_client):
     with contextlib.suppress(SystemExit):
         app(["job", "queued"], exit_on_error=False)
 
-    assert mock_client.get_printers.called
+    assert mock_client.printers.list_printers.called
     mock_client.get_printer_queue.assert_called_with("p1")
 
 

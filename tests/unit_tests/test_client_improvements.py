@@ -27,7 +27,7 @@ def test_default_timeout(client):
         mock_response.headers = {}  # Mock headers as a real dict
         mock_request.return_value = mock_response
 
-        client.get_printers()
+        client.printers.list_printers()
 
         mock_request.assert_called()
         # Check that timeout=30.0 was passed
@@ -46,7 +46,7 @@ def test_custom_timeout():
         mock_response.headers = {}
         mock_request.return_value = mock_response
 
-        client.get_printers()
+        client.printers.list_printers()
 
         _args, kwargs = mock_request.call_args
         assert kwargs["timeout"] == 10.0

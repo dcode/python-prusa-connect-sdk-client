@@ -8,10 +8,13 @@ repos:
           - mdformat-mkdocs[recommended]
           - mdformat-ruff
           - mdformat_frontmatter
+        exclude: ^docs/cli/reference\.md$
   - repo: https://github.com/jackdewinter/pymarkdown
     rev: v0.9.35 # Use the latest version
     hooks:
       - id: pymarkdown
+        name: pymarkdown
+        args: ["-d", "MD041,MD002", "scan"] # Let mdformat handle frontmatter
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

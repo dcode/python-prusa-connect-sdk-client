@@ -53,6 +53,6 @@ def test_retry_on_final_failure(mock_send, client):
     mock_send.side_effect = RetryError("Max retries exceeded")
 
     with pytest.raises(PrusaNetworkError) as exc:
-        client.get_printers()
+        client.printers.list_printers()
 
     assert "Failed to connect" in str(exc.value)

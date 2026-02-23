@@ -40,7 +40,7 @@ def job_list(
         # Aggregation mode: Get jobs from ALL printers (cached)
         # This is preferred over iterating teams if we want "my printers" context
         try:
-            printers = client.get_printers()
+            printers = client.printers.list_printers()
             for p in printers:
                 if not p.uuid:
                     continue
@@ -86,7 +86,7 @@ def job_list(
         table.add_row(
             str(j.id),
             j.printer_uuid or "Unknown",
-            j.state or "Unknown",
+            j.state.name,
             j.file.name if j.file else "Unknown",
             f"{j.progress}%" if j.progress is not None else "N/A",
             ended_str,
@@ -123,7 +123,7 @@ def job_queued(
     else:
         # Aggregate from all printers
         try:
-            printers = client.get_printers()
+            printers = client.printers.list_printers()
             for p in printers:
                 if not p.uuid:
                     continue

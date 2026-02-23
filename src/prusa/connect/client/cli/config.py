@@ -66,9 +66,9 @@ class Settings(pydantic_settings.BaseSettings):
         """Customise settings sources to include config.json."""
         return (
             init_settings,
-            pydantic_settings.InitSettingsSource(settings_cls, load_json_config()),
             env_settings,
             dotenv_settings,
+            pydantic_settings.InitSettingsSource(settings_cls, load_json_config()),
             file_secret_settings,
         )
 

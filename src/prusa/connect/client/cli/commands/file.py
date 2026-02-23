@@ -11,6 +11,7 @@ from prusa.connect.client.cli import common, config
 file_app = cyclopts.App(name="file", help="File management (Connect/Team level)")
 
 
+@file_app.command(name="list")
 def file_list(
     team_id: typing.Annotated[int | None, cyclopts.Parameter(help="Team ID to list files for")] = None,
 ):
@@ -19,7 +20,7 @@ def file_list(
     resolved_team_id = team_id or config.settings.default_team_id
 
     if not resolved_team_id:
-        teams = client.get_teams()
+        teams = client.teams.list_teams()
         if not teams:
             common.console.print("[red]No teams found.[/red]")
             return
@@ -60,7 +61,7 @@ def file_upload(
     client = common.get_client()
     resolved_team_id = team_id or config.settings.default_team_id
     if not resolved_team_id:
-        teams = client.get_teams()
+        teams = client.teams.list_teams()
         if not teams:
             common.console.print("[red]No teams found.[/red]")
             return
@@ -105,7 +106,7 @@ def file_download(
     client = common.get_client()
     resolved_team_id = team_id or config.settings.default_team_id
     if not resolved_team_id:
-        teams = client.get_teams()
+        teams = client.teams.list_teams()
         if not teams:
             common.console.print("[red]No teams found.[/red]")
             return
@@ -136,7 +137,7 @@ def file_show(
     client = common.get_client()
     resolved_team_id = team_id or config.settings.default_team_id
     if not resolved_team_id:
-        teams = client.get_teams()
+        teams = client.teams.list_teams()
         if not teams:
             common.console.print("[red]No teams found.[/red]")
             return

@@ -6,7 +6,7 @@ from prusa.connect.client import PrusaConnectClient
 client = PrusaConnectClient()
 
 print("My Printers:")
-for printer in client.get_printers():
+for printer in client.printers.list_printers():
     status = printer.printer_state or "UNKNOWN"
     print(f"- {printer.name} ({status})")
 

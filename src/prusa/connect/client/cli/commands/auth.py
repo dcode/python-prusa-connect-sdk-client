@@ -2,7 +2,6 @@
 
 import contextlib
 import datetime
-import getpass
 import json
 import os
 import sys
@@ -10,31 +9,35 @@ import typing
 
 import cyclopts
 from rich import print as rprint
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from prusa.connect.client import auth, exceptions
 from prusa.connect.client.cli import common, config
 
+auth_app = cyclopts.App(name="auth", help="Manage authentication settings")
 
-def _auth_login():
+
+@auth_app.command(name="login")
+def login_command():
     """Perform interactive login."""
-    rprint("Logging in to Prusa Connect...")
+    rprint("[bold blue]Logging in to Prusa Connect...[/bold blue]")
 
-    email = config.settings.prusa_email or os.environ.get("PRUSA_EMAIL")
-    if not email:
-        print("Email: ", end="", flush=True)
-        email = input().strip()
+    default_email = config.settings.prusa_email or os.environ.get("PRUSA_EMAIL")
+    email = Prompt.ask("Email", default=default_email)
 
-    password = config.settings.prusa_password or os.environ.get("PRUSA_PASSWORD")
-    if not password:
-        password = getpass.getpass("Password: ")
+    default_password = config.settings.prusa_password or os.environ.get("PRUSA_PASSWORD")
+    if default_password:
+        rprint("[dim]Using password from environment/config[/dim]")
+        password = default_password
+    else:
+        password = Prompt.ask("Password", password=True)
 
     def otp_callback() -> str:
-        print("Enter 2FA/TOTP Code: ", end="", flush=True)
-        return input().strip()
+        return Prompt.ask("Enter 2FA/TOTP Code")
 
     try:
-        token_data = auth.interactive_login(email, str(password), otp_callback=otp_callback)
+        token_data = auth.interactive_login(str(email), str(password), otp_callback=otp_callback)
 
         def save_tokens(data):
             path = config.settings.tokens_file
@@ -54,7 +57,8 @@ def _auth_login():
         sys.exit(1)
 
 
-def _auth_show():
+@auth_app.command(name="show")
+def show_command():
     """Show current authentication status."""
     creds = auth.PrusaConnectCredentials.load_default()
     if not creds or not creds.valid:
@@ -100,18 +104,22 @@ def _auth_show():
     common.console.print(table)
 
 
-def _auth_clear():
+@auth_app.command(name="clear")
+def clear_command():
     """Clear saved credentials."""
     path = config.settings.tokens_file
     if path.exists():
+        if not Confirm.ask(f"Clear saved credentials at {path}?"):
+            rprint("[dim]Aborted.[/dim]")
+            return
         path.unlink()
         rprint(f"[green]Removed tokens file: {path}[/green]")
     else:
         rprint(f"[yellow]No tokens file found at {path}[/yellow]")
 
 
-def _auth_print_token(kind: typing.Literal["access", "identity"]):
-    """Print raw token."""
+def _print_token(kind: typing.Literal["access", "identity"]):
+    """Helper to print raw token."""
     creds = auth.PrusaConnectCredentials.load_default()
     # Try refresh if needed
     if creds and not creds.valid:
@@ -135,22 +143,17 @@ def _auth_print_token(kind: typing.Literal["access", "identity"]):
         sys.exit(1)
 
 
-def auth_command(
-    action: typing.Annotated[
-        typing.Literal["login", "show", "clear", "print-access-token", "print-identity-token"],
-        cyclopts.Parameter(help="Auth action"),
-    ],
-):
-    """Manage authentication settings."""
-    common.logger.debug("Command started", command="auth", action=action)
+@auth_app.command(name="print-access-token")
+def print_access_token_command():
+    """Print the raw access token."""
+    _print_token("access")
 
-    if action == "login":
-        _auth_login()
-    elif action == "show":
-        _auth_show()
-    elif action == "clear":
-        _auth_clear()
-    elif action == "print-access-token":
-        _auth_print_token("access")
-    elif action == "print-identity-token":
-        _auth_print_token("identity")
+
+@auth_app.command(name="print-identity-token")
+def print_identity_token_command():
+    """Print the raw identity token."""
+    _print_token("identity")
+
+
+# Legacy alias for backward compatibility if needed, but we're replacing the command structure.
+# We can export auth_app as the main interface.

@@ -23,7 +23,7 @@ def _send_printer_command(printer_ids: list[str], command: str):
 
     for pid in printer_ids:
         try:
-            if client.send_command(pid, command):
+            if client.printers.send_command(pid, command):
                 rprint(f"[green]Sent {command} to {pid}[/green]")
         except Exception as e:
             rprint(f"[red]Failed to send {command} to {pid}: {e}[/red]")
@@ -36,7 +36,7 @@ def printer_list(
     """List all printers associated with the account."""
     common.logger.debug("Command started", command="printer list", pattern=pattern)
     client = common.get_client()
-    printers = client.get_printers()
+    printers = client.printers.list_printers()
     common.logger.info("Found printers", count=len(printers))
 
     table = Table(title="Printers")
@@ -77,14 +77,18 @@ def printer_show(
     """Show detailed status for a specific printer."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then\n"
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     common.logger.debug("Command started", command="printer show", printer_id=resolved_id)
     client = common.get_client()
 
     try:
-        p = client.get_printer(resolved_id)
+        p = client.printers.get(resolved_id)
 
         # Basic Info Table
         table = Table(title=f"Printer: {p.name}")
@@ -95,19 +99,6 @@ def printer_show(
         table.add_row("State", p.printer_state or "N/A")
         table.add_row("Model", p.printer_model or "N/A")
 
-        # Network Info
-        if p.network_info:
-            if p.network_info.lan_ipv4:
-                table.add_row("IP Address", p.network_info.lan_ipv4)
-            if p.network_info.hostname:
-                table.add_row("Hostname", p.network_info.hostname)
-
-        # Location / Team
-        if p.location:
-            table.add_row("Location", p.location)
-        if p.team_name:
-            table.add_row("Team", p.team_name)
-
         # Firmware
         fw_str = p.firmware_version or "Unknown"
         if p.support and p.support.latest and p.support.latest != p.firmware_version:
@@ -115,6 +106,25 @@ def printer_show(
             # The 'current' field in support might be more accurate or redundant with p.firmware_version
             fw_str += f" [yellow](Latest: {p.support.latest})[/yellow]"
         table.add_row("Firmware", fw_str)
+
+        # Location / Team
+        if p.location:
+            table.add_row("Location", p.location)
+        if p.team_name:
+            table.add_row("Team", p.team_name)
+
+        # Network Info
+        if p.network_info:
+            table.add_section()
+            if p.network_info.hostname:
+                table.add_row("Hostname", p.network_info.hostname)
+            if p.network_info.lan_ipv4:
+                table.add_row("IP Address", p.network_info.lan_ipv4)
+
+        # Last Online
+        if p.last_online:
+            last_seen = datetime.datetime.fromtimestamp(p.last_online).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+            table.add_row("Last Online", last_seen)
 
         # Tool 1 Material (Default View)
         material = "N/A"
@@ -130,28 +140,21 @@ def printer_show(
                 if m and m != "---":
                     material = f"{m} (Slot {active_slot_key})"
 
-        if material != "N/A" and material != "---":
-            table.add_row("Material", material)
-
-        # Last Online
-        if p.last_online:
-            last_seen = datetime.datetime.fromtimestamp(p.last_online).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-            table.add_row("Last Online", last_seen)
-
+        table.add_section()
+        table.add_row("Material", material)
         if p.telemetry:
             table.add_row("Nozzle", f"{p.telemetry.temp_nozzle}°C")
             table.add_row("Bed", f"{p.telemetry.temp_bed}°C")
 
+        # Job
         if p.job:
+            table.add_section()
             table.add_row("Job", p.job.display_name or "Unknown")
             table.add_row("Progress", f"{p.job.progress}%")
-            if p.job.time_remaining:
-                # Convert seconds to likely H:M:S
-
-                m, s = divmod(p.job.time_remaining, 60)
-                h, m = divmod(m, 60)
-                time_left = f"{h}h {m}m {s}s"
-                table.add_row("Time Left", time_left)
+            if p.job.time_printing:
+                table.add_row("Time Printing", str(p.job.time_printing))
+            if p.job.time_remaining and p.job.time_remaining.total_seconds() > 0:
+                table.add_row("Time Remaining", str(p.job.time_remaining))
 
         common.console.print(table)
 
@@ -203,8 +206,6 @@ def printer_show(
 
             if axis_table.row_count > 0:
                 common.console.print(axis_table)
-
-            import json
 
             rprint("\n[bold]Raw Detailed Information:[/bold]")
             detail_table = Table(show_header=False, box=None)
@@ -287,7 +288,7 @@ def printer_stop(
                     # We need the current job ID to set the reason
                     # Fetch printer status to get job ID
                     try:
-                        p = client.get_printer(pid)
+                        p = client.printers.get(pid)
                         if p.job and p.job.id:
                             # Validate reason string against Enum
 
@@ -323,7 +324,11 @@ def printer_cancel_object(
     """Cancel a specific object during print."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     common.logger.debug("Command started", command="printer cancel-object", printer_id=resolved_id, object_id=object_id)
@@ -349,7 +354,11 @@ def printer_move(
     """Move printer axis."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     common.logger.debug("Command started", command="printer move", printer_id=resolved_id)
@@ -373,7 +382,11 @@ def printer_flash(
     """Flash firmware from a file on the printer's storage."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     common.logger.debug("Command started", command="printer flash", printer_id=resolved_id, file_path=file_path)
@@ -394,7 +407,11 @@ def printer_commands(
     """List supported commands for a specific printer."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     common.logger.debug("Command started", command="printer commands", printer_id=resolved_id)
@@ -489,7 +506,11 @@ def printer_execute_command(
     """
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     common.logger.debug(
@@ -597,7 +618,11 @@ def printer_storages(
     """List storage devices attached to a printer."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     client = common.get_client()
@@ -631,7 +656,11 @@ def printer_files_list(
     """List files on the printer's storage."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     client = common.get_client()
@@ -664,26 +693,17 @@ def printer_files_upload(
     """Upload a file to a printer's storage."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     client = common.get_client()
     try:
-        # We need the team ID for the printer
-        # A simple way is to fetch printer details
-        p = client.get_printer(resolved_id)
-        # We need the numeric team_id. Wait, does Printer model have team_id?
-        # models.py shows Team model has id, but Printer has team_name.
-        # I'll check my 'get_teams' list if I don't have it in Printer.
-        # Actually, let's look at Printer model in models.py.
-
-        # If we don't have team_id in Printer, we might need to find it by team_name if it matches.
-        # Or maybe the API for uploads supports printer_uuid?
-        # Sample JS shows /app/users/teams/159691/uploads
-
-        # Let's see if we can get the team_id from the printer listing or details.
-
-        teams = client.get_teams()
+        p = client.printers.get(resolved_id)
+        teams = client.teams.list_teams()
         # Find team by team_name
         target_team = next((t for t in teams if t.name == p.team_name), None)
         if not target_team and teams:
@@ -711,13 +731,17 @@ def printer_files_download(
     """Download a file that belongs to a printer's team."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint("[red]No printer ID provided and no default configured.[/red]")
+        rprint(
+            "[red]No printer ID provided and no default configured.[/red]\n"
+            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
+            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
+        )
         return
 
     client = common.get_client()
     try:
-        p = client.get_printer(resolved_id)
-        teams = client.get_teams()
+        p = client.printers.get(resolved_id)
+        teams = client.teams.list_teams()
         target_team = next((t for t in teams if t.name == p.team_name), None)
         if not target_team and teams:
             target_team = teams[0]

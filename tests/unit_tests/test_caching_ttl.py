@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,10 +15,17 @@ def mock_cache_dir(tmp_path):
 
 @pytest.fixture
 def mock_client(mock_cache_dir):
-    # Set short TTL for testing (1 second)
-    client = PrusaConnectClient(credentials=MagicMock(), base_url="http://mock", cache_dir=mock_cache_dir, cache_ttl=1)
-    client._session = MagicMock()
-    return client
+    with patch.object(PrusaConnectClient, "get_app_config"):
+        # Set short TTL for testing (1 second)
+        client = PrusaConnectClient(
+            credentials=MagicMock(),
+            base_url="http://mock",
+            cache_dir=mock_cache_dir,
+            cache_ttl=1,
+        )
+        client._app_config = MagicMock()
+        client._session = MagicMock()
+        return client
 
 
 def test_cache_ttl_expiration_commands(mock_client, mock_cache_dir):
@@ -63,13 +70,11 @@ def test_cache_ttl_hit_commands(mock_client, mock_cache_dir):
     cache_file = mock_cache_dir / "printers" / printer_uuid / "commands.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
 
-    cached_data = {
-        "commands": [
-            {"command": "FRESH", "args": []},
-            {"command": "STOP_PRINT", "args": []},
-            {"command": "PAUSE_PRINT", "args": []},
-        ]
-    }
+    cached_data = [
+        {"command": "FRESH", "args": []},
+        {"command": "STOP_PRINT", "args": []},
+        {"command": "PAUSE_PRINT", "args": []},
+    ]
     cache_file.write_text(json.dumps(cached_data))
 
     # Set mtime to now (fresh)
@@ -98,10 +103,9 @@ def test_cache_ttl_expiration_printers(mock_client, mock_cache_dir):
     # Setup Network Failure
     mock_client._session.request.side_effect = Exception("Network Down")
 
-    # Execute - expect failure because cache is expired
-    # get_printers re-raises the original error if cache fails/expires
+    # This should trigger a network call because cache is expired
     with pytest.raises(Exception, match="Network Down"):
-        mock_client.get_printers()
+        mock_client.printers.list_printers()
 
 
 def test_cache_ttl_valid_printers_fallback(mock_client, mock_cache_dir):
@@ -118,7 +122,7 @@ def test_cache_ttl_valid_printers_fallback(mock_client, mock_cache_dir):
     # Setup Network Failure
     mock_client._session.request.side_effect = Exception("Network Down")
 
-    # Execute - should return cached
-    printers = mock_client.get_printers()
+    # Execute    # Should read from cache despite network error
+    printers = mock_client.printers.list_printers()
     assert len(printers) == 1
     assert printers[0].name == "Cached"

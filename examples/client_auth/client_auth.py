@@ -41,4 +41,4 @@ if not creds or not creds.valid:
 client = PrusaConnectClient(credentials=creds)
 
 # 3. Use it (Token refresh happens automatically in background if needed)
-printers = client.get_printers()
+printers = client.printers.list_printers()

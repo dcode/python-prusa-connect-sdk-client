@@ -2,24 +2,10 @@
 
 ## Headless Authentication (CI/CD)
 
-For environments where interactive login isn't possible (like CI/CD pipelines or
-servers), you can use environment variables.
-
-1. **Option A: Raw Token** Set the `PRUSA_TOKEN` environment variable with your
-   raw JWT access token.
-
-    ```bash
-    export PRUSA_TOKEN="ey..."
-    ```
-
-2. **Option B: Token JSON** Set the `PRUSA_TOKENS_JSON` environment variable
-   with the full JSON object containing access and refresh tokens.
-
-    ```bash
-    export PRUSA_TOKENS_JSON='{"access_token": "...", "refresh_token": "..."}'
-    ```
-
-The `PrusaConnectClient` will automatically detect these variables.
+For environments where interactive login isn't possible, use the `PRUSA_TOKEN`
+or `PRUSA_TOKENS_JSON` environment variables. See
+[Authentication](authentication.md#3-headless-cicd-authentication) for full
+details.
 
 ## Controlling a Printer
 

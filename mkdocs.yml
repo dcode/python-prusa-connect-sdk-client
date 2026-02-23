@@ -13,6 +13,7 @@ theme:
     - content.action.edit
     - content.code.copy
     - navigation.sections
+    - content.tabs.link
 markdown_extensions:
   - admonition
   - attr_list
@@ -21,16 +22,23 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
 plugins:
   - search
   - optimize:
-      enabled: !ENV [CI, false]
+      enabled: false
   - git-revision-date-localized:
       enabled: !ENV [CI, false]
       type: timeago
       enable_creation_date: true
       exclude:
       - index.md
+  - cyclopts
   - mkdocstrings:
       handlers:
         python:
@@ -48,7 +56,6 @@ plugins:
       branch: main
       enabled: !ENV [CI, false]
   - meta
-  - cyclopts
   - typeset
 exclude_docs: |
   development_notes/
@@ -68,13 +75,19 @@ extra:
       make our documentation better.
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - Examples & How-Tos: examples.md
-  - CLI Reference: cli_reference.md
-  - API Reference:
-      - Auth: api/auth.md
-      - Client: api/client.md
-      - Models: api/models.md
+  - Getting Started:
+      - Installation: installation.md
+      - Authentication: authentication.md
+  - CLI User Guide:
+      - Quickstart: cli/quickstart.md
+      - Reference: cli/reference.md
+  - SDK Developer Guide:
+      - Quickstart: sdk/quickstart.md
+      - Examples: examples.md
+      - API Reference:
+          - Auth: api/auth.md
+          - Client: api/client.md
+          - Models: api/models.md
   - Development Resources:
     - Contributing: contributing.md
     - Architecture Notes: internal_architecture.md

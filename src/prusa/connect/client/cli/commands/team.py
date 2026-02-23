@@ -8,6 +8,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from prusa.connect.client.cli import common, config
+from prusa.connect.client.cli.commands.job import job_list
 
 team_app = cyclopts.App(name="team", help="Team management")
 
@@ -16,7 +17,7 @@ team_app = cyclopts.App(name="team", help="Team management")
 def list_teams():
     """List all teams the user belongs to."""
     client = common.get_client()
-    teams = client.get_teams()
+    teams = client.teams.list_teams()
 
     table = Table(title="Teams")
     table.add_column("ID", style="cyan")
@@ -49,7 +50,7 @@ def show_team(
 
     client = common.get_client()
     try:
-        team = client.get_team(team_id_to_use)
+        team = client.teams.get(team_id_to_use)
     except Exception as e:
         rprint(f"[red]Error fetching team {team_id_to_use}: {e}[/red]")
         sys.exit(1)
@@ -161,3 +162,19 @@ def set_current_team(
 def teams_alias():
     """List all teams (alias for 'team list')."""
     list_teams()
+
+
+@team_app.command(name="jobs")
+def team_jobs_alias(
+    team: typing.Annotated[int | None, cyclopts.Parameter(help="Team ID")] = None,
+    printer: typing.Annotated[str | None, cyclopts.Parameter(help="Printer UUID")] = None,
+    state: typing.Annotated[list[str] | None, cyclopts.Parameter(help="Job state")] = None,
+    limit: typing.Annotated[int | None, cyclopts.Parameter(help="Limit number of jobs")] = None,
+):
+    """List jobs (alias for 'job list')."""
+    team_id_to_use = team or config.settings.default_team_id
+    if team_id_to_use is None:
+        rprint("[red]Error: Team ID not provided and no default is set.[/red]")
+        sys.exit(1)
+
+    job_list(team=team_id_to_use, printer=printer, state=state, limit=limit)

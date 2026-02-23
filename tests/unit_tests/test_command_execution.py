@@ -36,8 +36,8 @@ def test_get_supported_commands(mock_client):
     assert cmds[0].args[0].name == "distance"
 
     # Verify cache
-    assert "printer1" in mock_client._supported_commands_cache
-    assert mock_client._supported_commands_cache["printer1"] == cmds
+    assert "printer1" in mock_client.printers._supported_commands_cache
+    assert mock_client.printers._supported_commands_cache["printer1"] == cmds
 
     # Verify no second request
     mock_client.get_supported_commands("printer1")
@@ -49,7 +49,7 @@ def test_execute_printer_command_valid(mock_client):
     cmd_def = CommandDefinition(command="MOVE_Z", args=[CommandArgument(name="distance", type="number", required=True)])
     stop_def = CommandDefinition(command="STOP_PRINT", args=[])
     pause_def = CommandDefinition(command="PAUSE_PRINT", args=[])
-    mock_client._supported_commands_cache["printer1"] = [cmd_def, stop_def, pause_def]
+    mock_client.printers._supported_commands_cache["printer1"] = [cmd_def, stop_def, pause_def]
 
     # Execute valid
     mock_client._session.request.return_value.status_code = 200
@@ -58,7 +58,7 @@ def test_execute_printer_command_valid(mock_client):
     # Verify call
     mock_client._session.request.assert_called_with(
         "POST",
-        "http://mock/printers/printer1/commands/sync",
+        "http://mock/app/printers/printer1/commands/sync",
         json={"command": "MOVE_Z", "kwargs": {"distance": 10.5}},
         timeout=30.0,
     )
@@ -66,7 +66,7 @@ def test_execute_printer_command_valid(mock_client):
 
 def test_execute_printer_command_invalid_missing_arg(mock_client):
     cmd_def = CommandDefinition(command="MOVE_Z", args=[CommandArgument(name="distance", type="number", required=True)])
-    mock_client._supported_commands_cache["printer1"] = [
+    mock_client.printers._supported_commands_cache["printer1"] = [
         cmd_def,
         CommandDefinition(command="STOP_PRINT"),
         CommandDefinition(command="PAUSE_PRINT"),
@@ -78,7 +78,7 @@ def test_execute_printer_command_invalid_missing_arg(mock_client):
 
 def test_execute_printer_command_invalid_type(mock_client):
     cmd_def = CommandDefinition(command="MOVE_Z", args=[CommandArgument(name="distance", type="number", required=True)])
-    mock_client._supported_commands_cache["printer1"] = [
+    mock_client.printers._supported_commands_cache["printer1"] = [
         cmd_def,
         CommandDefinition(command="STOP_PRINT"),
         CommandDefinition(command="PAUSE_PRINT"),
@@ -89,7 +89,7 @@ def test_execute_printer_command_invalid_type(mock_client):
 
 
 def test_execute_printer_command_unsupported(mock_client):
-    mock_client._supported_commands_cache["printer1"] = []
+    mock_client.printers._supported_commands_cache["printer1"] = []
 
     with pytest.raises(ValueError, match="not supported"):
         mock_client.execute_printer_command("printer1", "UNKNOWN_CMD")

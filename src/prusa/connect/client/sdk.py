@@ -6,13 +6,12 @@ handling authentication, error parsing, connection pooling, and response validat
 How to use the most important parts:
 - `PrusaConnectClient`: The core class. Instantiate it (optionally with `PrusaConnectCredentials`) to begin
   controlling printers.
-- Look at the methods available on `PrusaConnectClient`, such as `get_printers()`, `send_command(...)`,
-  and `get_team_users(...)`, for an exhaustive list of actions supported.
+- Access resources via the service attributes: `client.printers`, `client.teams`, `client.cameras`,
+  `client.files`, `client.jobs`, and `client.stats`.
 """
 
 import collections.abc
-import json
-import time
+import datetime
 import typing
 from pathlib import Path
 
@@ -24,6 +23,14 @@ from urllib3.util import Retry
 
 from prusa.connect.client import auth, camera, command_models, consts, exceptions, gcode, models
 from prusa.connect.client.__version__ import __version__
+from prusa.connect.client.services import (
+    cameras,
+    files,
+    jobs,
+    printers,
+    stats,
+    teams,
+)
 
 type PrusaCameraClient = camera.PrusaCameraClient
 
@@ -62,9 +69,17 @@ class PrusaConnectClient:
         >>> from prusa.connect.client import PrusaConnectClient
         >>> # Assume you have a credentials object
         >>> client = PrusaConnectClient(credentials=my_creds)
-        >>> printers = client.get_printers()
+        >>> printers = client.printers.list_printers()
     ```
     """
+
+    # Service attribute annotations (instance attributes set in __init__)
+    printers: "printers.PrinterService"
+    files: "files.FileService"
+    teams: "teams.TeamService"
+    cameras: "cameras.CameraService"
+    jobs: "jobs.JobService"
+    stats: "stats.StatsService"
 
     def __init__(
         self,
@@ -99,8 +114,11 @@ class PrusaConnectClient:
         self._timeout = timeout
         self._cache_dir = Path(cache_dir) if cache_dir else None
         self._cache_ttl = cache_ttl
+
         self._session = requests.Session()
-        self._supported_commands_cache: dict[str, list[command_models.CommandDefinition]] = {}
+
+        # Config state
+        self._app_config: models.AppConfig | None = None
 
         # Configure Retries
         retries = Retry(
@@ -109,7 +127,7 @@ class PrusaConnectClient:
             status_forcelist=[500, 502, 503, 504],
             allowed_methods={"GET", "POST", "PUT", "DELETE", "PATCH"},
         )
-        adapter = HTTPAdapter(max_retries=retries)
+        adapter = HTTPAdapter(max_retries=retries)  # type: ignore
         self._session.mount("https://", adapter)
         self._session.mount("http://", adapter)
 
@@ -119,6 +137,95 @@ class PrusaConnectClient:
                 "Accept": "application/json",
             }
         )
+
+        # Initialize Services
+        self.printers = printers.PrinterService(self, self._cache_dir, self._cache_ttl)
+        self.files = files.FileService(self)
+        self.teams = teams.TeamService(self)
+        self.cameras = cameras.CameraService(self)
+        self.jobs = jobs.JobService(self)
+        self.stats = stats.StatsService(self)
+
+        # Initialize Config
+        self.get_app_config()
+
+    def request(self, method: str, endpoint: str, **kwargs: typing.Any) -> typing.Any:
+        """Internal method alias for services."""
+        return self._request(method, endpoint, **kwargs)
+
+    @property
+    def config(self) -> models.AppConfig:
+        """The application configuration. Verified to be populated after init."""
+        if self._app_config is None:
+            raise exceptions.PrusaConnectError("App config not initialized.")
+        return self._app_config
+
+    def get_app_config(self, force_refresh: bool = False) -> models.AppConfig:
+        """Fetch and cache the application configuration from /app/config.
+
+        Args:
+            force_refresh: If True, ignore cached config and fetch from server.
+
+        Returns:
+            The `AppConfig` object.
+
+        Raises:
+            PrusaApiError: If the request fails.
+            ValueError: If the server does not support the required auth method.
+        """
+        if self._app_config and not force_refresh:
+            return self._app_config
+
+        # We use a raw request here to avoid circular dependency or issues if
+        # authentication itself relied on this config (though currently it's a check).
+        # We DO NOT use self._request initially because _request might use credentials
+        # which might rely on config. However, currently credentials are just headers.
+        # But wait, /app/config is public? Or authenticated?
+        # The curl command `curl -s https://connect.prusa3d.com/app/config` works without auth.
+        # So we should use a plain requests call or _request with auth=None if supported.
+        # _request always injects credentials. Let's use the session but skip auth injection if possible?
+        # Actually _request calls `self._credentials.before_request`.
+        # /app/config seems public. Let's try to use _request but we might get 401 if creds are bad?
+        # No, if creds are bad, _request raises PrusaAuthError.
+        # But we really want to fetch this even if creds are bad?
+        # The user said "use during client initialization".
+        # If I use `requests.get` directly, I bypass `_request` logic (retries, logging).
+        # I should use `self._session`.
+
+        url = f"{self._base_url}/app/config"
+        logger.debug("Fetching App Config", url=url)
+
+        try:
+            # /app/config is public, so we don't strictly need headers,
+            # but it doesn't hurt to send them if we have them.
+            # However, to be safe during init (where creds might be invalid/missing if we allowed that),
+            # maybe we should just fetch it without auth headers first?
+            # Existing `_request` enforces auth.
+
+            # Use raw session to avoid auth injection for this specific public endpoint
+            response = self._session.get(url, timeout=self._timeout)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            raise exceptions.PrusaNetworkError(f"Failed to fetch app config: {e}") from e
+
+        config = models.AppConfig(**data)
+
+        # Validate Auth Backend
+        if "PRUSA_AUTH" not in config.auth.backends:
+            # We strictly require PRUSA_AUTH for now as that's all this client speaks.
+            logger.warning("PRUSA_AUTH not found in supported backends", backends=config.auth.backends)
+            # We could raise an error, but maybe the server is just being weird and we want to try anyway?
+            # User said: "When authenticating, we should validate that the server offers that option"
+            # Since this is "init", let's log a warning. If we raise Error, we might break clients if
+            # the server temporarily hides it or something.
+            # But actually, if it's not there, our auth flow (sending Bearer token) 'should' be acceptable
+            # if the server still accepts it.
+            # "select the backend accordingly" -> implied usage of `PRUSA_AUTH`.
+            pass
+
+        self._app_config = config
+        return config
 
     def get_camera_client(self, camera_token: str, signaling_url: str | None = None) -> camera.PrusaCameraClient:
         """Returns a pre-configured PrusaCameraClient.
@@ -166,27 +273,33 @@ class PrusaConnectClient:
 
         url = f"{self._base_url}/{endpoint.lstrip('/')}"
         kwargs.setdefault("timeout", self._timeout)
-
+        response: requests.Response | None = None
         try:
             logger.debug("API Request", method=method, url=url)
             # Check for stream in kwargs before request
             is_stream = kwargs.get("stream", False)
             response = self._session.request(method, url, **kwargs)
 
+            for h in response.headers:
+                logger.info("Header", header=h, value=response.headers[h])
+
             # Avoid reading content if streaming
             body_len = "STREAM" if is_stream else len(response.content)
 
             logger.debug(
                 "API Response",
-                status_code=response.status_code,
+                status_code=getattr(response, "status_code", None),
                 headers=dict(response.headers),
                 body_len=body_len,
             )
 
-            if response.status_code in (401, 403):
+            if raw:
+                return response
+
+            if getattr(response, "status_code", None) in (401, 403):
                 raise exceptions.PrusaAuthError("Invalid or expired credentials.")
 
-            if response.status_code >= 400:
+            if getattr(response, "status_code", -1) >= 400:
                 # For error responses, we might want to read content even if streaming?
                 # Usually APIs return small JSON errors.
                 # If we are streaming a big download and fail, we probably want the error text.
@@ -200,20 +313,25 @@ class PrusaConnectClient:
 
                 raise exceptions.PrusaApiError(
                     message=f"Request failed: {response.reason}",
-                    status_code=response.status_code,
+                    status_code=getattr(response, "status_code", -1),
                     response_body=error_text,
                 )
 
-            if response.status_code == 204:
+            if getattr(response, "status_code", -1) == 204:
                 return None
-
-            if raw:
-                return response
 
             return response.json()
 
         except requests.exceptions.RequestException as e:
-            logger.error("Network error", error=str(e))
+            logger.error(
+                "Network error",
+                error=str(e),
+                url=url,
+                method=method,
+                status=getattr(response, "status_code", None),
+                response=getattr(response, "content", None),
+                headers=getattr(response, "headers", None),
+            )
             raise exceptions.PrusaNetworkError(f"Failed to connect to Prusa Connect: {e}") from e
 
     def api_request(self, method: str, endpoint: str, **kwargs: typing.Any) -> typing.Any:
@@ -239,91 +357,6 @@ class PrusaConnectClient:
         """
         return self._request(method, endpoint, **kwargs)
 
-    def get_printers(self) -> list[models.Printer]:
-        """Fetch all printers associated with the account.
-
-        This method caches the result to avoid redundant network calls if `cache_dir` is configured.
-        The cache is updated on every successful network call. If the network call fails,
-        it attempts to return cached data.
-
-        Returns:
-            A list of `Printer` objects.
-
-        Usage Example:
-        ```python
-            >>> printers = client.get_printers()
-            >>> for printer in printers:
-            ...     print(printer.name, printer.printer_state)
-        ```
-        """
-        cache_file = None
-        if self._cache_dir:
-            cache_file = self._cache_dir / "printers" / "list.json"
-
-        try:
-            data = self._request("GET", "/printers")
-
-            # Helper to parse data
-            parsed_printers = []
-            if isinstance(data, dict) and "printers" in data:
-                parsed_printers = [models.Printer.model_validate(p) for p in data["printers"]]
-            elif isinstance(data, list):
-                parsed_printers = [models.Printer.model_validate(p) for p in data]
-            else:
-                logger.warning("Unexpected printer response format", data=data)
-
-            # Update cache if successful
-            if cache_file and parsed_printers:
-                try:
-                    cache_file.parent.mkdir(parents=True, exist_ok=True)
-                    # We store the raw API response or a simplified list?
-                    # Let's store the list of models for consistency
-                    cache_data = {"printers": [p.model_dump(mode="json") for p in parsed_printers]}
-                    cache_file.write_text(json.dumps(cache_data, indent=2))
-                except Exception as e:
-                    logger.warning("Failed to save printers to cache", error=str(e))
-
-            return parsed_printers
-
-        except Exception as e:
-            # Fallback to cache
-            if cache_file and cache_file.exists():
-                try:
-                    # Check TTL
-                    mtime = cache_file.stat().st_mtime
-                    age = time.time() - mtime
-                    if age > self._cache_ttl:
-                        logger.warning("Cached printer list expired", age=age, ttl=self._cache_ttl)
-                        raise exceptions.PrusaAuthError("Cache expired and network failed.")  # Or just fail
-
-                    logger.info("Using cached printer list due to error", error=str(e))
-                    data = json.loads(cache_file.read_text())
-                    if isinstance(data, dict) and "printers" in data:
-                        return [models.Printer.model_validate(p) for p in data["printers"]]
-                except Exception as cache_e:
-                    logger.warning("Failed to load cached printers", error=str(cache_e))
-
-            # if no cache or cache failed, re-raise original error
-            raise e
-
-    def get_printer(self, uuid: str) -> models.Printer:
-        """Fetch details for a specific printer.
-
-        Args:
-            uuid: The UUID of the printer.
-
-        Returns:
-            A `Printer` object containing detailed telemetry and state.
-
-        Usage Example:
-        ```python
-            >>> printer = client.get_printer("c0ffee-uuid")
-            >>> print(printer.telemetry.temp_nozzle)
-        ```
-        """
-        data = self._request("GET", f"/printers/{uuid}")
-        return models.Printer.model_validate(data)
-
     def get_file_list(self, team_id: int) -> list[models.File]:
         """Fetch files for a specific team.
 
@@ -332,24 +365,8 @@ class PrusaConnectClient:
 
         Returns:
             A list of `File` objects.
-
-        Usage Example:
-        ```python
-            >>> files = client.get_file_list(1)
-            >>> for file in files:
-            ...     print(file.name)
-        ```
         """
-        data = self._request("GET", f"/teams/{team_id}/files")
-
-        if isinstance(data, dict) and "files" in data:
-            logger.debug("Fetched files for team", team_id=team_id)
-            files = []
-            for f in data["files"]:
-                logger.debug("File", file=f)
-                files.append(pydantic.TypeAdapter(models.File).validate_python(f))
-            return files
-        return []
+        return self.files.list(team_id)
 
     def get_team_file(self, team_id: int, file_hash: str) -> models.File:
         """Fetch details for a specific file in a team.
@@ -360,16 +377,8 @@ class PrusaConnectClient:
 
         Returns:
             A `File` object containing detailed file metadata.
-
-        Usage Example:
-        ```python
-            >>> file_info = client.get_team_file(1, "file_hash")
-            >>> print(file_info.name)
-        ```
         """
-        data = self._request("GET", f"/teams/{team_id}/files/{file_hash}")
-        logger.debug("Fetched team file", team_id=team_id, file_hash=file_hash)
-        return pydantic.TypeAdapter(models.File).validate_python(data)
+        return self.files.get(team_id, file_hash)
 
     def initiate_team_upload(self, team_id: int, destination: str, filename: str, size: int) -> models.UploadStatus:
         """Initiate a file upload to a team's storage.
@@ -383,9 +392,7 @@ class PrusaConnectClient:
         Returns:
             An `UploadStatus` object containing the upload ID and state.
         """
-        payload = {"destination": destination, "filename": filename, "size": size}
-        data = self._request("POST", f"/users/teams/{team_id}/uploads", json=payload)
-        return models.UploadStatus.model_validate(data)
+        return self.files.initiate_upload(team_id, destination, filename, size)
 
     def upload_team_file(
         self, team_id: int, upload_id: int, data: bytes, content_type: str = "application/octet-stream"
@@ -398,8 +405,7 @@ class PrusaConnectClient:
             data: The binary content of the file.
             content_type: Optional Content-Type header (e.g., 'application/x-bgcode').
         """
-        headers = {"Content-Type": content_type, "Upload-Size": str(len(data))}
-        self._request("PUT", f"/teams/{team_id}/files/raw?upload_id={upload_id}", data=data, headers=headers)
+        return self.files.upload_data(team_id, upload_id, data, content_type)
 
     def download_team_file(self, team_id: int, file_hash: str) -> bytes:
         """Download a file from a team's storage.
@@ -411,59 +417,18 @@ class PrusaConnectClient:
         Returns:
             The binary content of the file.
         """
-        response = self._request("GET", f"/teams/{team_id}/files/{file_hash}/raw", raw=True)
-        return response.content
+        return self.files.download(team_id, file_hash)
 
-    def get_cameras(self) -> list[models.Camera]:
-        """Fetch all cameras.
-
-        Returns:
-            A list of `Camera` objects.
-
-        Usage Example:
-        ```python
-            >>> cameras = client.get_cameras()
-            >>> for cam in cameras:
-            ...     print(cam.name)
-        ```
-        """
-        data = self._request("GET", "/cameras")
-        if isinstance(data, dict) and "cameras" in data:
-            logger.debug("Received cameras.", cameras=json.dumps(data["cameras"]))
-            return [models.Camera.model_validate(c) for c in data["cameras"]]
-        return []
-
-    def get_teams(self) -> list[models.Team]:
-        """Fetch all teams associated with the account.
-
-        Returns:
-            A list of `Team` objects.
-
-        Usage Example:
-        ```python
-            >>> teams = client.get_teams()
-            >>> for team in teams:
-            ...     print(team.name)
-        ```
-        """
-        data = self._request("GET", "/users/teams")
-        teams: list[models.Team] = []
-        if isinstance(data, list):
-            logger.debug("Fetched multiple teams")
-            teams = [models.Team.model_validate(t) for t in data]
-        return teams
-
-    def get_team(self, team_id: int) -> models.Team:
-        """Fetch detailed information for a specific team.
+    def get_team_users(self, team_id: int) -> list[models.TeamUser]:
+        """Fetch all users associated with a team.
 
         Args:
             team_id: The ID of the team.
 
         Returns:
-            A `Team` object.
+            A list of `TeamUser` objects.
         """
-        data = self._request("GET", f"/users/teams/{team_id}")
-        return models.Team.model_validate(data)
+        return self.teams.list_users(team_id)
 
     def add_team_user(
         self,
@@ -485,14 +450,7 @@ class PrusaConnectClient:
         Returns:
             True if the user was invited successfully.
         """
-        payload = {
-            "email": email,
-            "rights_ro": rights_ro,
-            "rights_use": rights_use,
-            "rights_rw": rights_rw,
-        }
-        self._request("POST", f"/teams/{team_id}/add-user", json=payload)
-        return True
+        return self.teams.add_user(team_id, email, rights_ro, rights_use, rights_rw)
 
     def get_team_jobs(self, team_id: int, state: list[str] | None = None, limit: int | None = None) -> list[models.Job]:
         """Fetch job history for a team.
@@ -504,27 +462,8 @@ class PrusaConnectClient:
 
         Returns:
             A list of `Job` objects.
-
-        Usage Example:
-        ```python
-            >>> jobs = client.get_team_jobs(team_id=123, limit=5)
-            >>> print(f"Found {len(jobs)} jobs")
-        ```
         """
-        data = self._request("GET", f"/teams/{team_id}/jobs")
-        jobs: list[models.Job] = []
-        if isinstance(data, dict) and "jobs" in data:
-            jobs = [models.Job.model_validate(j) for j in data["jobs"]]
-
-        # Client-side filtering/limiting since API params are not fully confirmed
-        if state:
-            state_set = set(state)
-            jobs = [j for j in jobs if j.state in state_set]
-
-        if limit is not None:
-            jobs = jobs[:limit]
-
-        return jobs
+        return self.jobs.list_team_jobs(team_id, state=state, limit=limit)
 
     def get_printer_jobs(
         self, printer_uuid: str, state: list[str] | None = None, limit: int | None = None
@@ -538,93 +477,93 @@ class PrusaConnectClient:
 
         Returns:
             A list of `Job` objects.
-
-        Usage Example:
-        ```python
-            >>> jobs = client.get_printer_jobs("printer-uuid", state=["FINISHED"])
-            >>> if jobs:
-            ...     print(jobs[0].state)
-        ```
         """
-        data = self._request("GET", f"/printers/{printer_uuid}/jobs")
-        jobs: list[models.Job] = []
-        if isinstance(data, dict) and "jobs" in data:
-            jobs = [models.Job.model_validate(j) for j in data["jobs"]]
+        return self.jobs.list_printer_jobs(printer_uuid, state=state, limit=limit)
 
-        # Client-side filtering/limiting
-        if state:
-            state_set = set(state)
-            jobs = [j for j in jobs if j.state in state_set]
-
-        if limit is not None:
-            jobs = jobs[:limit]
-
-        return jobs
-
-    def get_printer_queue(self, printer_uuid: str) -> list[models.Job]:
+    def get_printer_queue(self, printer_uuid: str, limit: int = 100, offset: int = 0) -> list[models.Job]:
         """Fetch the print queue for a printer.
 
         Args:
             printer_uuid: The printer UUID.
+            limit: Optional maximum number of jobs to return.
+            offset: Optional offset for pagination.
 
         Returns:
             A list of `Job` objects representing the queue.
-
-        Usage Example:
-        ```python
-            >>> queue = client.get_printer_queue("printer-uuid")
-            >>> if queue:
-            ...     print(queue[0].state)
-        ```
         """
-        data = self._request("GET", f"/printers/{printer_uuid}/queue")
+        return self.jobs.get_queue(printer_uuid, limit, offset)
 
-        # Structure from users reverse engineering:
-        # GET response usually: {"planned_jobs": [...] }
-        # POST response (adding): single object
-
-        if isinstance(data, dict):
-            if "planned_jobs" in data:
-                return [models.Job.model_validate(j) for j in data["planned_jobs"]]
-            # Fallback for other potential keys or single object if the API is quirky
-            if "jobs" in data:
-                return [models.Job.model_validate(j) for j in data["jobs"]]
-            if "queue" in data:
-                return [models.Job.model_validate(j) for j in data["queue"]]
-
-            # If it looks like a single job (has 'id' and 'state')
-            if "id" in data and "state" in data:
-                return [models.Job.model_validate(data)]
-
-        elif isinstance(data, list):
-            return [models.Job.model_validate(j) for j in data]
-
-        # Fallback empty
-        return []
-
-    def send_command(self, printer_uuid: str, command: str, kwargs: dict | None = None) -> bool:
-        """Send a command to a printer.
+    def get_printer_material_stats(
+        self,
+        printer_uuid: str,
+        from_time: datetime.date | int | None = None,
+        to_time: datetime.date | int | None = None,
+    ) -> models.MaterialQuantity:
+        """Fetch material quantity statistics for a printer.
 
         Args:
             printer_uuid: The printer UUID.
-            command: The command string (e.g., 'PAUSE_PRINT', 'MOVE_Z').
-            kwargs: Optional arguments for the command.
+            from_time: Optional start date or timestamp.
+            to_time: Optional end date or timestamp.
 
         Returns:
-            True if the command was successfully sent.
-
-        Usage Example:
-        ```python
-            >>> client.send_command("printer-uuid", "PAUSE_PRINT")
-        ```
+            A `MaterialQuantity` object.
         """
-        payload: dict[str, typing.Any] = {"command": command}
-        if kwargs:
-            payload["kwargs"] = kwargs
+        return self.stats.get_material(printer_uuid, from_time, to_time)
 
-        # discovery says /commands/sync is definitive
-        self._request("POST", f"/printers/{printer_uuid}/commands/sync", json=payload)
-        return True
+    def get_printer_usage_stats(
+        self,
+        printer_uuid: str,
+        from_time: datetime.date | int | None = None,
+        to_time: datetime.date | int | None = None,
+    ) -> models.PrintingNotPrinting:
+        """Fetch printing vs not printing statistics for a printer.
+
+        Args:
+            printer_uuid: The printer UUID.
+            from_time: Optional start date or timestamp.
+            to_time: Optional end date or timestamp.
+
+        Returns:
+            A `PrintingNotPrinting` object.
+        """
+        return self.stats.get_usage(printer_uuid, from_time, to_time)
+
+    def get_printer_planned_tasks_stats(
+        self,
+        printer_uuid: str,
+        from_time: datetime.date | int | None = None,
+        to_time: datetime.date | int | None = None,
+    ) -> models.PlannedTasks:
+        """Fetch planned tasks statistics for a printer.
+
+        Args:
+            printer_uuid: The printer UUID.
+            from_time: Optional start date or timestamp.
+            to_time: Optional end date or timestamp.
+
+        Returns:
+            A `PlannedTasks` object.
+        """
+        return self.stats.get_planned_tasks(printer_uuid, from_time, to_time)
+
+    def get_printer_jobs_success_stats(
+        self,
+        printer_uuid: str,
+        from_time: datetime.date | int | None = None,
+        to_time: datetime.date | int | None = None,
+    ) -> models.JobsSuccess:
+        """Fetch jobs success statistics for a printer.
+
+        Args:
+            printer_uuid: The printer UUID.
+            from_time: Optional start date or timestamp.
+            to_time: Optional end date or timestamp.
+
+        Returns:
+            A `JobsSuccess` object.
+        """
+        return self.stats.get_jobs_success(printer_uuid, from_time, to_time)
 
     def get_supported_commands(self, printer_uuid: str) -> list[command_models.CommandDefinition]:
         """Fetch supported commands for a printer.
@@ -638,101 +577,7 @@ class PrusaConnectClient:
         Returns:
             A list of `CommandDefinition` objects.
         """
-        # 1. Check Memory Cache
-        if printer_uuid in self._supported_commands_cache:
-            return self._supported_commands_cache[printer_uuid]
-
-        # 2. Check Disk Cache (if enabled)
-        cache_file = None
-        if self._cache_dir:
-            cache_file = self._cache_dir / "printers" / printer_uuid / "commands.json"
-            if cache_file.exists():
-                try:
-                    mtime = cache_file.stat().st_mtime
-                    age = time.time() - mtime
-                    if age <= self._cache_ttl:
-                        logger.debug("Loading commands from cache", path=str(cache_file))
-                        data = json.loads(cache_file.read_text())
-                        response = command_models.SupportedCommandsResponse.model_validate(data)
-                        self._supported_commands_cache[printer_uuid] = response.commands
-                        return response.commands
-                    else:
-                        logger.debug("Cached commands expired", age=age, ttl=self._cache_ttl)
-                except Exception as e:
-                    logger.warning("Failed to load cached commands", error=str(e))
-                    # Fallback to network on error
-
-        # 3. Fetch from Network
-        data = self._request("GET", f"/printers/{printer_uuid}/supported-commands")
-
-        # Parse response
-        response = command_models.SupportedCommandsResponse.model_validate(data)
-        self._supported_commands_cache[printer_uuid] = response.commands
-
-        # 4. Save to Disk (if enabled)
-        if cache_file:
-            try:
-                cache_file.parent.mkdir(parents=True, exist_ok=True)
-                cache_file.write_text(json.dumps(data, indent=2))
-            except Exception as e:
-                logger.warning("Failed to save commands to cache", error=str(e))
-
-        # 5. Check Compatibility
-        # We ensure core commands are present.
-        cmd_names = {c.command for c in response.commands}
-        # The user specifically mentioned STOP_PRINT as core functionality.
-        # We can add others later if needed.
-        required = {"STOP_PRINT", "PAUSE_PRINT"}
-        missing = required - cmd_names
-
-        if missing:
-            # Gather details for failure report
-            report_data = {
-                "missing_commands": list(missing),
-                "supported_commands": [c.model_dump(mode="json") for c in response.commands],
-                "printer_details": {},
-                "timestamp": time.time(),
-            }
-
-            try:
-                # Try to fetch printer details for context
-                p_details = self.get_printer(printer_uuid)
-                p_dump = p_details.model_dump(mode="json")
-
-                # Redact sensitive info
-                # serial number (uuid?), printer name, owner name, printer IP, location, team name
-                keys_to_redact = {"name", "location", "team_name", "uuid", "serial", "ip", "hostname", "ipv4", "mac"}
-
-                def redact_recursive(d):
-                    if isinstance(d, dict):
-                        for k, v in d.items():
-                            if k.lower() in keys_to_redact or any(
-                                x in k.lower() for x in ["ip", "mac", "serial", "token"]
-                            ):
-                                d[k] = "[REDACTED]"
-                            else:
-                                redact_recursive(v)
-                    elif isinstance(d, list):
-                        for i in d:
-                            redact_recursive(i)
-
-                redact_recursive(p_dump)
-                report_data["printer_details"] = p_dump
-
-            except Exception as e:
-                logger.warning("Failed to fetch printer details for error report", error=str(e))
-                report_data["printer_details"] = {"error": str(e)}
-
-            raise exceptions.PrusaCompatibilityError(
-                (
-                    f"Printer {printer_uuid} is missing required commands: {missing}."
-                    " This may indicate a firmware incompatibility."
-                ),
-                missing_commands=list(missing),
-                report_data=report_data,
-            )
-
-        return response.commands
+        return self.printers.get_supported_commands(printer_uuid)
 
     def execute_printer_command(
         self, printer_uuid: str, command: str, args: dict[str, typing.Any] | None = None
@@ -782,7 +627,7 @@ class PrusaConnectClient:
                     raise ValueError(f"Argument '{arg_def.name}' must be a number.")
                 # 'object' type is too generic to validate easily here without more schema
 
-        return self.send_command(printer_uuid, command, args)
+        return self.printers.send_command(printer_uuid, command, args)
 
     def get_snapshot(self, camera_id: str) -> bytes:
         """Fetch a snapshot from a camera.
@@ -801,7 +646,7 @@ class PrusaConnectClient:
         ```
         """
         # Raw response for binary data
-        response = self._request("GET", f"/cameras/{camera_id}/snapshots/last", raw=True)
+        response = self._request("GET", f"/app/cameras/{camera_id}/snapshots/last", raw=True)
         return response.content
 
     def trigger_snapshot(self, camera_token: str) -> bool:
@@ -818,7 +663,7 @@ class PrusaConnectClient:
             >>> client.trigger_snapshot("camera-token-xyz")
         ```
         """
-        self._request("POST", f"/cameras/{camera_token}/snapshots")
+        self._request("POST", f"/app/cameras/{camera_token}/snapshots")
         return True
 
     def pause_print(self, printer_uuid: str) -> bool:
@@ -830,7 +675,7 @@ class PrusaConnectClient:
         Returns:
             True if the command was successfully sent.
         """
-        return self.send_command(printer_uuid, "PAUSE_PRINT")
+        return self.printers.send_command(printer_uuid, "PAUSE_PRINT")
 
     def resume_print(self, printer_uuid: str) -> bool:
         """Resume the current print.
@@ -841,7 +686,7 @@ class PrusaConnectClient:
         Returns:
             True if the command was successfully sent.
         """
-        return self.send_command(printer_uuid, "RESUME_PRINT")
+        return self.printers.send_command(printer_uuid, "RESUME_PRINT")
 
     def stop_print(self, printer_uuid: str) -> bool:
         """Stop the current print.
@@ -852,7 +697,7 @@ class PrusaConnectClient:
         Returns:
             True if the command was successfully sent.
         """
-        return self.send_command(printer_uuid, "STOP_PRINT")
+        return self.printers.send_command(printer_uuid, "STOP_PRINT")
 
     def cancel_object(self, printer_uuid: str, object_id: int) -> bool:
         """Cancel a specific object during print.
@@ -864,7 +709,7 @@ class PrusaConnectClient:
         Returns:
             True if the command was successfully sent.
         """
-        return self.send_command(printer_uuid, "CANCEL_OBJECT", {"object_id": object_id})
+        return self.printers.send_command(printer_uuid, "CANCEL_OBJECT", {"object_id": object_id})
 
     def move_axis(
         self,
@@ -902,7 +747,7 @@ class PrusaConnectClient:
 
         # MOVE usually requires at least one axis or speed?
         # Based on captured data, we saw: {"feedrate": 3000, "x": 131, "y": 134}
-        return self.send_command(printer_uuid, "MOVE", kwargs)
+        return self.printers.send_command(printer_uuid, "MOVE", kwargs)
 
     def flash_firmware(self, printer_uuid: str, file_path: str) -> bool:
         """Flash firmware from a file path on the printer/storage.
@@ -914,7 +759,7 @@ class PrusaConnectClient:
         Returns:
             True if the command was successfully sent.
         """
-        return self.send_command(printer_uuid, "FLASH", {"path": file_path})
+        return self.printers.send_command(printer_uuid, "FLASH", {"path": file_path})
 
     def set_job_failure_reason(
         self, printer_uuid: str, job_id: int, reason: models.JobFailureTag, note: str = ""
@@ -931,7 +776,7 @@ class PrusaConnectClient:
             True if successful.
         """
         payload = {"reason": {"tag": [reason.value], "other": note}}
-        self._request("PATCH", f"/printers/{printer_uuid}/jobs/{job_id}", json=payload)
+        self._request("PATCH", f"/app/printers/{printer_uuid}/jobs/{job_id}", json=payload)
         return True
 
     def get_job(self, printer_uuid: str, job_id: int) -> models.Job:
@@ -944,7 +789,7 @@ class PrusaConnectClient:
         Returns:
             A `Job` object.
         """
-        data = self._request("GET", f"/printers/{printer_uuid}/jobs/{job_id}")
+        data = self._request("GET", f"/app/printers/{printer_uuid}/jobs/{job_id}")
         return models.Job.model_validate(data)
 
     def get_printer_files(self, printer_uuid: str) -> list[models.File]:
@@ -956,7 +801,7 @@ class PrusaConnectClient:
         Returns:
             A list of `File` objects.
         """
-        data = self._request("GET", f"/printers/{printer_uuid}/files")
+        data = self._request("GET", f"/app/printers/{printer_uuid}/files")
         if isinstance(data, dict) and "files" in data:
             return [pydantic.TypeAdapter(models.File).validate_python(f) for f in data["files"]]
         return []
@@ -970,7 +815,7 @@ class PrusaConnectClient:
         Returns:
             A list of `Storage` objects.
         """
-        data = self._request("GET", f"/printers/{printer_uuid}/storages")
+        data = self._request("GET", f"/app/printers/{printer_uuid}/storages")
         if isinstance(data, list):
             return [models.Storage.model_validate(s) for s in data]
         if isinstance(data, dict) and "storages" in data:

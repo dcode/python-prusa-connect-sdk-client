@@ -22,9 +22,11 @@ from prusa.connect.client.cli import main  # noqa: E402
 )
 def test_logging_levels(args, expected_level):
     # We patch structlog.make_filtering_bound_logger to capture the level passed
-    with patch("prusa.connect.client.cli.common.structlog.make_filtering_bound_logger") as mock_maker:
-        with contextlib.suppress(SystemExit):
-            main(args)
+    with (
+        patch("prusa.connect.client.cli.common.structlog.make_filtering_bound_logger") as mock_maker,
+        contextlib.suppress(SystemExit),
+    ):
+        main(args)
 
         # We expect at least one call to configure logging with expected level
         # If args have flags, main calls it.

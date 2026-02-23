@@ -18,7 +18,7 @@ def camera_list():
     """List all cameras."""
     common.logger.debug("Command started", command="camera list")
     client = common.get_client()
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
 
     table = Table(title="Cameras")
     table.add_column("Name", style="cyan")
@@ -51,7 +51,7 @@ def camera_snapshot(
     client = common.get_client()
 
     # We look up the camera to get ID
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
 
     real_id = camera_id
@@ -86,7 +86,7 @@ def camera_trigger(
     client = common.get_client()
 
     # We look up to get token
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
 
     real_token = camera_id
@@ -113,7 +113,7 @@ def camera_move(
     client = common.get_client()
 
     # Resolve token
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
     token = match.token if match and match.token else camera_id
 
@@ -139,7 +139,7 @@ def camera_adjust(
     client = common.get_client()
 
     # Resolve token
-    cameras = client.get_cameras()
+    cameras = client.cameras.list()
     match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
     token = match.token if match and match.token else camera_id
 
@@ -167,7 +167,52 @@ def camera_adjust(
 
 @camera_app.command(name="set-current")
 def set_current_camera(camera_id: typing.Annotated[str, cyclopts.Parameter(help="Camera UUID")]):
-    """Set the default camera UUID for future commands."""
+    """Set the default camera ID for future commands."""
     config.settings.default_camera_id = camera_id
     config.save_json_config(config.settings)
     rprint(f"[green]Successfully set default camera to {camera_id}[/green]")
+
+
+@camera_app.command(name="show")
+def camera_show(
+    camera_id: typing.Annotated[str, cyclopts.Parameter(help="Camera Token or ID or Name")],
+    detailed: bool = False,
+):
+    """Show details for a specific camera."""
+    common.logger.debug("Command started", command="camera show", camera_id=camera_id, detailed=detailed)
+    client = common.get_client()
+
+    cameras = client.cameras.list()
+    match = next((c for c in cameras if str(c.id) == camera_id or c.token == camera_id or c.name == camera_id), None)
+
+    if not match:
+        rprint(f"[red]Camera '{camera_id}' not found.[/red]")
+        sys.exit(1)
+
+    if detailed:
+        from rich.panel import Panel
+        from rich.pretty import Pretty
+
+        common.console.print(Panel(Pretty(match), title=f"Camera: {match.name or 'Unknown'}"))
+    else:
+        table = Table(show_header=False, box=None)
+        table.add_column("Property", style="bold cyan")
+        table.add_column("Value")
+
+        table.add_row("Name", match.name or "N/A")
+        table.add_row("ID (Numeric)", str(match.id) if match.id else "N/A")
+        table.add_row("Token", match.token or "N/A")
+        table.add_row("Origin", match.origin or "N/A")
+
+        if match.config:
+            if match.config.resolution:
+                table.add_row("Resolution", f"{match.config.resolution.width}x{match.config.resolution.height}")
+            if match.config.firmware:
+                table.add_row("Firmware", match.config.firmware)
+            if match.config.model:
+                table.add_row("Model", match.config.model)
+
+        if match.printer_uuid:
+            table.add_row("Printer UUID", match.printer_uuid)
+
+        common.console.print(table)

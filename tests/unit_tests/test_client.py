@@ -32,7 +32,7 @@ def test_get_printers_success(client):
     )
 
     # 2. Call the method
-    printers = client.get_printers()
+    printers = client.printers.list_printers()
 
     # 3. Assertions
     assert len(printers) == 1
@@ -47,4 +47,4 @@ def test_auth_failure_raises_exception(client):
     responses.add(responses.GET, "https://connect.prusa3d.com/app/printers", status=401)
 
     with pytest.raises(PrusaAuthError):
-        client.get_printers()
+        client.printers.list_printers()
