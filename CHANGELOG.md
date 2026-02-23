@@ -3,23 +3,24 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.0] - Unreleased
 
 ### Breaking Changes
 
-- Removed deprecated shim methods from `PrusaConnectClient` that were present
-  in the alpha releases. The service-based API is now the sole public interface:
+- Removed deprecated shim methods from `PrusaConnectClient` that were present in
+  the alpha releases. The service-based API is now the sole public interface:
 
-  | Removed method | Replacement |
-  |---|---|
-  | `client.get_printers()` | `client.printers.list_printers()` |
-  | `client.get_printer(uuid)` | `client.printers.get(uuid)` |
-  | `client.get_cameras()` | `client.cameras.list()` |
-  | `client.get_teams()` | `client.teams.list_teams()` |
-  | `client.get_team(id)` | `client.teams.get(id)` |
-  | `client.send_command(uuid, cmd)` | `client.printers.send_command(uuid, cmd)` |
+    | Removed method                   | Replacement                               |
+    | -------------------------------- | ----------------------------------------- |
+    | `client.get_printers()`          | `client.printers.list_printers()`         |
+    | `client.get_printer(uuid)`       | `client.printers.get(uuid)`               |
+    | `client.get_cameras()`           | `client.cameras.list()`                   |
+    | `client.get_teams()`             | `client.teams.list_teams()`               |
+    | `client.get_team(id)`            | `client.teams.get(id)`                    |
+    | `client.send_command(uuid, cmd)` | `client.printers.send_command(uuid, cmd)` |
 
 ### Added
 
@@ -28,8 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `client.files`, `client.jobs`, and `client.stats`.
 - **`prusactl` CLI** with full subcommand coverage: `printer`, `camera`, `team`,
   `job`, `file`, `stats`, and `auth`.
-- **Statistics service** (`client.stats`) for per-printer material usage,
-  print time, planned tasks, and job success metrics.
+- **Statistics service** (`client.stats`) for per-printer material usage, print
+  time, planned tasks, and job success metrics.
 - **Printer command discovery** — `client.printers.get_supported_commands(uuid)`
   with optional disk caching and TTL.
 - **Validated command execution** — `client.execute_printer_command()` validates
@@ -38,8 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and image adjustment via the Prusa signaling protocol.
 - **G-code metadata parser** (`client.validate_gcode(path)`) for pre-flight
   checks before uploading.
-- **Persistent credential caching** — CLI credentials are stored in the
-  platform config directory and auto-loaded by the SDK.
+- **Persistent credential caching** — CLI credentials are stored in the platform
+  config directory and auto-loaded by the SDK.
 
 ### Changed
 

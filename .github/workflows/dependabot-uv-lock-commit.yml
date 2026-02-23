@@ -1,0 +1,50 @@
+name: "Dependabot: Commit uv.lock"
+# Privileged companion to dependabot-uv-lock.yml.
+# Triggered only after the unprivileged lock workflow succeeds.  Downloads the
+# artifact produced there and commits it to the PR branch.  No untrusted code
+# from the PR is executed here — only git operations on a known-good artifact.
+permissions:
+  contents: read
+on:
+  workflow_run:
+    workflows: ["Dependabot: Update uv.lock"]
+    types: [completed]
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    permissions:
+      contents: write
+    steps:
+      # Checkout by exact SHA so we commit on top of what the lock job saw.
+      - name: Checkout PR branch at workflow HEAD SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          token: ${{ secrets.DEPENDABOT_PAT }}
+      # Download after checkout so the artifact lands directly in the workspace,
+      # overwriting the existing uv.lock with the freshly-generated one.
+      # Push target is passed via env to avoid shell-injection from branch names.
+      - name: Download uv.lock artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: uv-lock
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push changes
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add uv.lock
+
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(dependabot): synchronize uv.lock"
+            git push origin "HEAD:${HEAD_BRANCH}"
+          else
+            echo "uv.lock is already up to date."
+          fi
