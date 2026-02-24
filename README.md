@@ -11,8 +11,8 @@ provides a frictionless, strongly-typed interface for the Prusa Connect API.
 >
 > This SDK is not an officially supported or endorsed product of Prusa Research.
 > It is developed and maintained by an independent developer and is not
-> affiliated with Prusa Research. See [Motivation & Design](#motivation--design)
-> for more information.
+> affiliated with Prusa Research. See
+> [Motivation & Design](#motivation-and-design) for more information.
 
 **Features:**
 
@@ -60,7 +60,7 @@ reference is available at:
 
 **<https://dcode.github.io/python-prusa-connect-sdk-client/>**
 
-## Motivation & Design
+## Motivation and Design
 
 My motivation to create this library is to provide a frictionless,
 strongly-typed interface for the Prusa Connect API. I want to be able to monitor
