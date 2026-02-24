@@ -8,9 +8,7 @@ import sys
 import typing
 
 import cyclopts
-from rich import print as rprint
 from rich.prompt import Confirm, Prompt
-from rich.table import Table
 
 from prusa.connect.client import auth, exceptions
 from prusa.connect.client.cli import common, config
@@ -21,14 +19,15 @@ auth_app = cyclopts.App(name="auth", help="Manage authentication settings")
 @auth_app.command(name="login")
 def login_command():
     """Perform interactive login."""
-    rprint("[bold blue]Logging in to Prusa Connect...[/bold blue]")
+    # Always use rich console for interactive prompts regardless of format
+    common.console.print("[bold blue]Logging in to Prusa Connect...[/bold blue]")
 
     default_email = config.settings.prusa_email or os.environ.get("PRUSA_EMAIL")
     email = Prompt.ask("Email", default=default_email)
 
     default_password = config.settings.prusa_password or os.environ.get("PRUSA_PASSWORD")
     if default_password:
-        rprint("[dim]Using password from environment/config[/dim]")
+        common.console.print("[dim]Using password from environment/config[/dim]")
         password = default_password
     else:
         password = Prompt.ask("Password", password=True)
@@ -41,19 +40,17 @@ def login_command():
 
         def save_tokens(data):
             path = config.settings.tokens_file
-            # Ensure parent dir exists
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w") as f:
                 json.dump(data, f, indent=2)
-            # Best-effort secure permissions
             with contextlib.suppress(OSError):
                 os.chmod(path, 0o600)
 
         save_tokens(token_data.dump_tokens())
-        rprint(f"[green]Authentication successful! Tokens saved to {config.settings.tokens_file}[/green]")
+        common.output_message(f"Authentication successful! Tokens saved to {config.settings.tokens_file}")
 
     except Exception as e:
-        rprint(f"[bold red]Authentication failed: {e}[/bold red]")
+        common.output_message(f"Authentication failed: {e}", error=True)
         sys.exit(1)
 
 
@@ -66,42 +63,81 @@ def show_command():
             if creds:
                 creds.refresh()
         except exceptions.PrusaAuthError:
-            rprint("[yellow]Not authenticated or tokens expired.[/yellow]")
+            common.output_message("Not authenticated or tokens expired.")
             return
 
     if not creds or not creds.tokens:
-        rprint("[yellow]No tokens found.[/yellow]")
+        common.output_message("No tokens found.")
         return
 
     t = creds.tokens
-    table = Table(title="Authentication Status", show_header=False)
 
-    # helper
     def fmt_ts(ts):
         return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
-    if t.identity_token:
-        table.add_row("[bold]Identity[/bold]", "")
-        table.add_row("  Subject (Sub)", str(t.identity_token.user_id))
-        table.add_row("  Issuer (Iss)", t.identity_token.issuer)
-        table.add_row("  Token ID (JTI)", t.identity_token.token_id)
-        if t.identity_token.user_info:
-            for k, v in t.identity_token.user_info.items():
-                if v:
-                    table.add_row(f"  User.{k}", str(v))
+    fmt = common.get_output_format()
 
-    if t.access_token:
-        table.add_row("[bold]Access Token[/bold]", "")
-        table.add_row("  Token ID (JTI)", t.access_token.token_id)
-        table.add_row("  Expires", fmt_ts(t.access_token.expires_at.timestamp()))
-        table.add_row("  Scope", ", ".join(t.scope))
+    if fmt == "json":
+        # Serialize structured token data
+        data: dict[str, dict[str, str | list[str] | dict[str, str]]] = {}
+        if t.identity_token:
+            identity: dict[str, str | list[str] | dict[str, str]] = {
+                "user_id": str(t.identity_token.user_id),
+                "issuer": t.identity_token.issuer,
+                "token_id": t.identity_token.token_id,
+            }
+            if t.identity_token.user_info:
+                identity["user_info"] = {k: str(v) for k, v in t.identity_token.user_info.items() if v}
+            data["identity"] = identity
+        if t.access_token:
+            data["access_token"] = {
+                "token_id": t.access_token.token_id,
+                "expires": fmt_ts(t.access_token.expires_at.timestamp()),
+                "scope": list(t.scope),
+            }
+        if t.refresh_token:
+            data["refresh_token"] = {
+                "token_id": t.refresh_token.token_id,
+                "expires": fmt_ts(t.refresh_token.expires_at.timestamp()),
+            }
+        print(json.dumps(data))
+    else:
+        rows: list[list[str]] = []
 
-    if t.refresh_token:
-        table.add_row("[bold]Refresh Token[/bold]", "")
-        table.add_row("  Token ID (JTI)", t.refresh_token.token_id)
-        table.add_row("  Expires", fmt_ts(t.refresh_token.expires_at.timestamp()))
+        if t.identity_token:
+            rows.append(["Identity", ""])
+            rows.append(["  Subject (Sub)", str(t.identity_token.user_id)])
+            rows.append(["  Issuer (Iss)", t.identity_token.issuer])
+            rows.append(["  Token ID (JTI)", t.identity_token.token_id])
+            if t.identity_token.user_info:
+                for k, v in t.identity_token.user_info.items():
+                    if v:
+                        rows.append([f"  User.{k}", str(v)])
 
-    common.console.print(table)
+        if t.access_token:
+            rows.append(["Access Token", ""])
+            rows.append(["  Token ID (JTI)", t.access_token.token_id])
+            rows.append(["  Expires", fmt_ts(t.access_token.expires_at.timestamp())])
+            rows.append(["  Scope", ", ".join(t.scope)])
+
+        if t.refresh_token:
+            rows.append(["Refresh Token", ""])
+            rows.append(["  Token ID (JTI)", t.refresh_token.token_id])
+            rows.append(["  Expires", fmt_ts(t.refresh_token.expires_at.timestamp())])
+
+        if fmt == "plain":
+            print("# Authentication Status")
+            for label, value in rows:
+                print(f"{label}\t{value}")
+        else:
+            from rich.table import Table
+
+            table = Table(title="Authentication Status", show_header=False)
+            table.add_column("Key", style="bold")
+            table.add_column("Value")
+            for label, value in rows:
+                table.add_row(label, value)
+            common.console.print(table)
 
 
 @auth_app.command(name="clear")
@@ -110,24 +146,23 @@ def clear_command():
     path = config.settings.tokens_file
     if path.exists():
         if not Confirm.ask(f"Clear saved credentials at {path}?"):
-            rprint("[dim]Aborted.[/dim]")
+            common.output_message("Aborted.")
             return
         path.unlink()
-        rprint(f"[green]Removed tokens file: {path}[/green]")
+        common.output_message(f"Removed tokens file: {path}")
     else:
-        rprint(f"[yellow]No tokens file found at {path}[/yellow]")
+        common.output_message(f"No tokens file found at {path}")
 
 
 def _print_token(kind: typing.Literal["access", "identity"]):
     """Helper to print raw token."""
     creds = auth.PrusaConnectCredentials.load_default()
-    # Try refresh if needed
     if creds and not creds.valid:
         with contextlib.suppress(exceptions.PrusaAuthError):
             creds.refresh()
 
     if not creds or not creds.tokens:
-        rprint("[red]No credentials found.[/red]", file=sys.stderr)
+        common.output_message("No credentials found.", error=True)
         sys.exit(1)
 
     token = None
@@ -139,7 +174,7 @@ def _print_token(kind: typing.Literal["access", "identity"]):
     if token:
         print(token)
     else:
-        rprint(f"[red]No {kind} token found.[/red]", file=sys.stderr)
+        common.output_message(f"No {kind} token found.", error=True)
         sys.exit(1)
 
 
@@ -153,7 +188,3 @@ def print_access_token_command():
 def print_identity_token_command():
     """Print the raw identity token."""
     _print_token("identity")
-
-
-# Legacy alias for backward compatibility if needed, but we're replacing the command structure.
-# We can export auth_app as the main interface.

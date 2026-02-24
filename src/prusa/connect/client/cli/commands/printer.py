@@ -6,8 +6,6 @@ import json
 import typing
 
 import cyclopts
-from rich import print as rprint
-from rich.table import Table
 
 from prusa.connect.client import exceptions, models
 from prusa.connect.client.cli import common, config
@@ -15,6 +13,12 @@ from prusa.connect.client.cli import common, config
 printer_app = cyclopts.App(name="printer", help="Printer management")
 files_printer_app = cyclopts.App(name="files", help="Printer file management")
 printer_app.command(files_printer_app)
+
+_NO_PRINTER = (
+    "No printer ID provided and no default configured.\n"
+    "Hint: Run 'prusactl printer list' to find a UUID, then "
+    "'prusactl printer set-current <uuid>' to set the default."
+)
 
 
 def _send_printer_command(printer_ids: list[str], command: str):
@@ -24,9 +28,9 @@ def _send_printer_command(printer_ids: list[str], command: str):
     for pid in printer_ids:
         try:
             if client.printers.send_command(pid, command):
-                rprint(f"[green]Sent {command} to {pid}[/green]")
+                common.output_message(f"Sent {command} to {pid}")
         except Exception as e:
-            rprint(f"[red]Failed to send {command} to {pid}: {e}[/red]")
+            common.output_message(f"Failed to send {command} to {pid}: {e}", error=True)
 
 
 @printer_app.command(name="list")
@@ -39,25 +43,20 @@ def printer_list(
     printers = client.printers.list_printers()
     common.logger.info("Found printers", count=len(printers))
 
-    table = Table(title="Printers")
-    table.add_column("Name", style="cyan")
-    table.add_column("UUID", style="magenta")
-    table.add_column("State", style="green")
-    table.add_column("Model", style="blue")
-
-    # Filter
     filtered = [p for p in printers if fnmatch.fnmatch(p.name or "", pattern)]
 
+    rows = []
     for p in filtered:
         common.logger.debug("Printer", json=p.model_dump_json())
         state_str = str(p.printer_state) if p.printer_state else "UNKNOWN"
-        table.add_row(
-            p.name or "Unknown",
-            p.uuid or "Unknown",
-            state_str,
-            p.printer_model or "N/A",
-        )
-    common.console.print(table)
+        rows.append([p.name or "Unknown", p.uuid or "Unknown", state_str, p.printer_model or "N/A"])
+
+    common.output_table(
+        "Printers",
+        ["Name", "UUID", "State", "Model"],
+        rows,
+        column_styles=["cyan", "magenta", "green", "blue"],
+    )
 
 
 def printers_alias(
@@ -77,11 +76,7 @@ def printer_show(
     """Show detailed status for a specific printer."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then\n"
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     common.logger.debug("Command started", command="printer show", printer_id=resolved_id)
@@ -90,49 +85,42 @@ def printer_show(
     try:
         p = client.printers.get(resolved_id)
 
-        # Basic Info Table
-        table = Table(title=f"Printer: {p.name}")
-        table.add_column("Field", style="cyan")
-        table.add_column("Value", style="magenta")
+        # Build rows and track section boundaries
+        rows: list[list[str]] = []
+        sections: set[int] = set()
 
-        table.add_row("UUID", p.uuid or "N/A")
-        table.add_row("State", p.printer_state or "N/A")
-        table.add_row("Model", p.printer_model or "N/A")
+        rows.append(["UUID", p.uuid or "N/A"])
+        rows.append(["State", p.printer_state or "N/A"])
+        rows.append(["Model", p.printer_model or "N/A"])
 
         # Firmware
         fw_str = p.firmware_version or "Unknown"
         if p.support and p.support.latest and p.support.latest != p.firmware_version:
-            # Check if current != latest
-            # The 'current' field in support might be more accurate or redundant with p.firmware_version
             fw_str += f" [yellow](Latest: {p.support.latest})[/yellow]"
-        table.add_row("Firmware", fw_str)
+        rows.append(["Firmware", fw_str])
 
-        # Location / Team
         if p.location:
-            table.add_row("Location", p.location)
+            rows.append(["Location", p.location])
         if p.team_name:
-            table.add_row("Team", p.team_name)
+            rows.append(["Team", p.team_name])
 
         # Network Info
         if p.network_info:
-            table.add_section()
+            sections.add(len(rows))
             if p.network_info.hostname:
-                table.add_row("Hostname", p.network_info.hostname)
+                rows.append(["Hostname", p.network_info.hostname])
             if p.network_info.lan_ipv4:
-                table.add_row("IP Address", p.network_info.lan_ipv4)
+                rows.append(["IP Address", p.network_info.lan_ipv4])
 
         # Last Online
         if p.last_online:
             last_seen = datetime.datetime.fromtimestamp(p.last_online).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-            table.add_row("Last Online", last_seen)
+            rows.append(["Last Online", last_seen])
 
-        # Tool 1 Material (Default View)
+        # Material
         material = "N/A"
-        # Try to find material from tools or slots
         if p.tools and "1" in p.tools:
             material = p.tools["1"].material or "N/A"
-
-        # If no tool material, maybe checking active slot?
         if (material == "N/A" or material == "---") and p.slot and p.slot.active is not None:
             active_slot_key = str(p.slot.active)
             if p.slot.slots and active_slot_key in p.slot.slots:
@@ -140,75 +128,82 @@ def printer_show(
                 if m and m != "---":
                     material = f"{m} (Slot {active_slot_key})"
 
-        table.add_section()
-        table.add_row("Material", material)
+        sections.add(len(rows))
+        rows.append(["Material", material])
         if p.telemetry:
-            table.add_row("Nozzle", f"{p.telemetry.temp_nozzle}°C")
-            table.add_row("Bed", f"{p.telemetry.temp_bed}°C")
+            rows.append(["Nozzle", f"{p.telemetry.temp_nozzle}°C"])
+            rows.append(["Bed", f"{p.telemetry.temp_bed}°C"])
 
         # Job
         if p.job:
-            table.add_section()
-            table.add_row("Job", p.job.display_name or "Unknown")
-            table.add_row("Progress", f"{p.job.progress}%")
+            sections.add(len(rows))
+            rows.append(["Job", p.job.display_name or "Unknown"])
+            rows.append(["Progress", f"{p.job.progress}%"])
             if p.job.time_printing:
-                table.add_row("Time Printing", str(p.job.time_printing))
+                rows.append(["Time Printing", str(p.job.time_printing)])
             if p.job.time_remaining and p.job.time_remaining.total_seconds() > 0:
-                table.add_row("Time Remaining", str(p.job.time_remaining))
+                rows.append(["Time Remaining", str(p.job.time_remaining)])
 
-        common.console.print(table)
+        common.output_table(
+            f"Printer: {p.name}",
+            ["Field", "Value"],
+            rows,
+            column_styles=["cyan", "magenta"],
+            sections_before=sections,
+        )
 
         if detailed:
-            # Detailed View - MMU Slots
+            # MMU Slots
             if p.slot and p.slot.slots:
-                slot_table = Table(title="MMU Slots")
-                slot_table.add_column("Slot", style="cyan")
-                slot_table.add_column("Material", style="magenta")
-                slot_table.add_column("Temp", style="yellow")
-
-                # Sort by slot ID
                 sorted_slots = sorted(p.slot.slots.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 999)
-                for slot_id, slot_data in sorted_slots:
-                    slot_table.add_row(
-                        slot_id, slot_data.material or "---", str(slot_data.temp) if slot_data.temp else "N/A"
-                    )
-                common.console.print(slot_table)
+                slot_rows = [
+                    [slot_id, slot_data.material or "---", str(slot_data.temp) if slot_data.temp else "N/A"]
+                    for slot_id, slot_data in sorted_slots
+                ]
+                common.output_table(
+                    "MMU Slots",
+                    ["Slot", "Material", "Temp"],
+                    slot_rows,
+                    column_styles=["cyan", "magenta", "yellow"],
+                )
 
-            # Tools Detail (Fans etc)
+            # Tools
             if p.tools:
-                tool_table = Table(title="Tools / Heads")
-                tool_table.add_column("Tool", style="cyan")
-                tool_table.add_column("Nozzle", style="green")
-                tool_table.add_column("Material", style="magenta")
-                tool_table.add_column("Fan Print", style="blue")
-                tool_table.add_column("Fan Hotend", style="blue")
-
-                for tool_id, tool_data in p.tools.items():
-                    tool_table.add_row(
+                tool_rows = [
+                    [
                         tool_id,
                         str(tool_data.nozzle_diameter) if tool_data.nozzle_diameter else "N/A",
                         tool_data.material or "---",
                         f"{tool_data.fan_print}%" if tool_data.fan_print is not None else "N/A",
                         f"{tool_data.fan_hotend}%" if tool_data.fan_hotend is not None else "N/A",
-                    )
-                common.console.print(tool_table)
+                    ]
+                    for tool_id, tool_data in p.tools.items()
+                ]
+                common.output_table(
+                    "Tools / Heads",
+                    ["Tool", "Nozzle", "Material", "Fan Print", "Fan Hotend"],
+                    tool_rows,
+                    column_styles=["cyan", "green", "magenta", "blue", "blue"],
+                )
 
-            # Axis Info
-            axis_table = Table(title="Axis Positions")
-            axis_table.add_column("Axis", style="cyan")
-            axis_table.add_column("Position", style="yellow")
+            # Axis
+            axis_rows = []
             if p.axis_x is not None:
-                axis_table.add_row("X", str(p.axis_x))
+                axis_rows.append(["X", str(p.axis_x)])
             if p.axis_y is not None:
-                axis_table.add_row("Y", str(p.axis_y))
+                axis_rows.append(["Y", str(p.axis_y)])
             if p.axis_z is not None:
-                axis_table.add_row("Z", str(p.axis_z))
+                axis_rows.append(["Z", str(p.axis_z)])
+            if axis_rows:
+                common.output_table(
+                    "Axis Positions",
+                    ["Axis", "Position"],
+                    axis_rows,
+                    column_styles=["cyan", "yellow"],
+                )
 
-            if axis_table.row_count > 0:
-                common.console.print(axis_table)
-
-            rprint("\n[bold]Raw Detailed Information:[/bold]")
-            detail_table = Table(show_header=False, box=None)
+            # Raw extra fields
+            detail_rows = []
             for k, v in p.model_dump(mode="json").items():
                 if v is not None and k not in [
                     "uuid",
@@ -227,11 +222,17 @@ def printer_show(
                     "job",
                 ]:
                     val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
-                    detail_table.add_row(f"[cyan]{k}[/cyan]:", val_str)
-            common.console.print(detail_table)
+                    detail_rows.append([k, val_str])
+            if detail_rows:
+                common.output_table(
+                    "Raw Detailed Information",
+                    ["Field", "Value"],
+                    detail_rows,
+                    column_styles=["cyan", None],
+                )
 
     except exceptions.PrusaConnectError as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @printer_app.command(name="pause")
@@ -241,7 +242,7 @@ def printer_pause(
     """Pause print on one or more printers."""
     ids = printer_ids or ([config.settings.default_printer_id] if config.settings.default_printer_id else [])
     if not ids:
-        rprint("[red]No printer IDs provided and no default configured.[/red]")
+        common.output_message("No printer IDs provided and no default configured.", error=True)
         return
 
     common.logger.debug("Command started", command="printer pause", printer_ids=ids)
@@ -255,7 +256,7 @@ def printer_resume(
     """Resume print on one or more printers."""
     ids = printer_ids or ([config.settings.default_printer_id] if config.settings.default_printer_id else [])
     if not ids:
-        rprint("[red]No printer IDs provided and no default configured.[/red]")
+        common.output_message("No printer IDs provided and no default configured.", error=True)
         return
 
     common.logger.debug("Command started", command="printer resume", printer_ids=ids)
@@ -271,7 +272,7 @@ def printer_stop(
     """Stop print on one or more printers, optionally setting a failure reason."""
     ids = printer_ids or ([config.settings.default_printer_id] if config.settings.default_printer_id else [])
     if not ids:
-        rprint("[red]No printer IDs provided and no default configured.[/red]")
+        common.output_message("No printer IDs provided and no default configured.", error=True)
         return
 
     common.logger.debug("Command started", command="printer stop", printer_ids=ids, reason=reason)
@@ -279,41 +280,32 @@ def printer_stop(
 
     for pid in ids:
         try:
-            # 1. Stop the print
             if client.stop_print(pid):
-                rprint(f"[green]Sent STOP_PRINT to {pid}[/green]")
+                common.output_message(f"Sent STOP_PRINT to {pid}")
 
-                # 2. Set reason if provided
                 if reason:
-                    # We need the current job ID to set the reason
-                    # Fetch printer status to get job ID
                     try:
                         p = client.printers.get(pid)
                         if p.job and p.job.id:
-                            # Validate reason string against Enum
-
-                            # Accept a case insensitive reason string
                             try:
                                 enum_reason = models.JobFailureTag(reason.upper())
                                 client.set_job_failure_reason(pid, p.job.id, enum_reason, note)
-                                rprint(f"[green]Set failure reason '{enum_reason}' for Job {p.job.id}[/green]")
+                                common.output_message(f"Set failure reason '{enum_reason}' for Job {p.job.id}")
                             except ValueError:
-                                rprint(
-                                    f"[yellow]Invalid reason code '{reason}'. Supported: "
-                                    f"{', '.join([r.value for r in models.JobFailureTag])}[/yellow]"
+                                common.output_message(
+                                    f"Invalid reason code '{reason}'. Supported: "
+                                    f"{', '.join([r.value for r in models.JobFailureTag])}"
                                 )
                         else:
-                            rprint(
-                                "[yellow]Could not determine Job ID to set failure reason "
-                                "(printer has no active job info).[/yellow]"
+                            common.output_message(
+                                "Could not determine Job ID to set failure reason (printer has no active job info)."
                             )
                     except Exception as e:
-                        rprint(f"[red]Failed to set failure reason: {e}[/red]")
-
+                        common.output_message(f"Failed to set failure reason: {e}", error=True)
             else:
-                rprint(f"[red]Failed to send STOP_PRINT to {pid}[/red]")
+                common.output_message(f"Failed to send STOP_PRINT to {pid}", error=True)
         except Exception as e:
-            rprint(f"[red]Failed to send STOP_PRINT to {pid}: {e}[/red]")
+            common.output_message(f"Failed to send STOP_PRINT to {pid}: {e}", error=True)
 
 
 @printer_app.command(name="cancel-object")
@@ -324,22 +316,18 @@ def printer_cancel_object(
     """Cancel a specific object during print."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     common.logger.debug("Command started", command="printer cancel-object", printer_id=resolved_id, object_id=object_id)
     client = common.get_client()
     try:
         if client.cancel_object(resolved_id, object_id):
-            rprint(f"[green]Successfully sent CANCEL_OBJECT for object {object_id} to {resolved_id}[/green]")
+            common.output_message(f"Successfully sent CANCEL_OBJECT for object {object_id} to {resolved_id}")
         else:
-            rprint("[red]Failed to send CANCEL_OBJECT command[/red]")
+            common.output_message("Failed to send CANCEL_OBJECT command", error=True)
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @printer_app.command(name="move")
@@ -354,22 +342,21 @@ def printer_move(
     """Move printer axis."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
+
+    if not any([x, y, z, e]):
+        common.output_message("At least one axis (x, y, z, or e) must be specified", error=True)
 
     common.logger.debug("Command started", command="printer move", printer_id=resolved_id)
     client = common.get_client()
     try:
         if client.move_axis(resolved_id, x=x, y=y, z=z, e=e, speed=speed):
-            rprint(f"[green]Successfully sent MOVE command to {resolved_id}[/green]")
+            common.output_message(f"Successfully sent MOVE command to {resolved_id}")
         else:
-            rprint("[red]Failed to send MOVE command[/red]")
+            common.output_message("Failed to send MOVE command", error=True)
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @printer_app.command(name="flash")
@@ -382,22 +369,18 @@ def printer_flash(
     """Flash firmware from a file on the printer's storage."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     common.logger.debug("Command started", command="printer flash", printer_id=resolved_id, file_path=file_path)
     client = common.get_client()
     try:
         if client.flash_firmware(resolved_id, file_path):
-            rprint(f"[green]Successfully sent FLASH command to {resolved_id}[/green]")
+            common.output_message(f"Successfully sent FLASH command to {resolved_id}")
         else:
-            rprint("[red]Failed to send FLASH command[/red]")
+            common.output_message("Failed to send FLASH command", error=True)
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @printer_app.command(name="commands")
@@ -407,11 +390,7 @@ def printer_commands(
     """List supported commands for a specific printer."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     common.logger.debug("Command started", command="printer commands", printer_id=resolved_id)
@@ -421,14 +400,11 @@ def printer_commands(
         commands = client.get_supported_commands(resolved_id)
 
         # Deduplicate commands
-        # The API can return "duplicates" that differ only by internal fields like 'template'.
-        # We group by name and signature (arguments) to avoid showing redundant entries.
         unique_map: dict[str, list] = {}
         for cmd in commands:
             if cmd.command not in unique_map:
                 unique_map[cmd.command] = []
 
-            # Check for signature match
             is_duplicate = False
             current_args_json = json.dumps(
                 [a.model_dump(include={"name", "type", "required"}) for a in cmd.args], sort_keys=True
@@ -447,14 +423,8 @@ def printer_commands(
 
         unique_commands = [cmd for sublist in unique_map.values() for cmd in sublist]
 
-        table = Table(title=f"Supported Commands for {printer_id}")
-        table.add_column("Command", style="cyan")
-        table.add_column("Description", style="white")
-        table.add_column("Arguments", style="yellow")
-        table.add_column("Valid States", style="green")
-
+        rows = []
         for cmd in sorted(unique_commands, key=lambda x: x.command):
-            # Format arguments
             args_str = ""
             if cmd.args:
                 arg_list = []
@@ -463,19 +433,24 @@ def printer_commands(
                     arg_list.append(f"{arg.name}{req_mark}")
                 args_str = ", ".join(arg_list)
 
-            # Format states
             states_str = ", ".join(cmd.executable_from_state) if cmd.executable_from_state else "ALL"
             if len(states_str) > 30:
                 states_str = states_str[:27] + "..."
 
-            table.add_row(cmd.command, cmd.description or "", args_str, states_str)
+            rows.append([cmd.command, cmd.description or "", args_str, states_str])
 
-        common.console.print(table)
+        common.output_table(
+            f"Supported Commands for {resolved_id}",
+            ["Command", "Description", "Arguments", "Valid States"],
+            rows,
+            column_styles=["cyan", "white", "yellow", "green"],
+        )
+
         if not commands:
-            rprint("[yellow]No supported commands found (or printer does not support command discovery).[/yellow]")
+            common.output_message("No supported commands found (or printer does not support command discovery).")
 
     except Exception as e:
-        rprint(f"[red]Error fetching commands:[/red] {e}")
+        common.output_message(f"Error fetching commands: {e}", error=True)
 
 
 @printer_app.command(name="command")
@@ -506,11 +481,7 @@ def printer_execute_command(
     """
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     common.logger.debug(
@@ -527,7 +498,6 @@ def printer_execute_command(
         # 1. Parse Arguments
         final_args = {}
 
-        # Load from JSON if provided
         if args:
             try:
                 json_parsed = json.loads(args)
@@ -535,80 +505,58 @@ def printer_execute_command(
                     raise ValueError("--args must be a JSON object")
                 final_args.update(json_parsed)
             except json.JSONDecodeError as e:
-                rprint(f"[red]Invalid JSON in --args:[/red] {e}")
+                common.output_message(f"Invalid JSON in --args: {e}", error=True)
                 return
 
-        # Load from kwargs (flags)
-        # cyclopts passes these as strings
-        # client.execute_printer_command does simple type checking:
-        # if arg_def.type == "integer" and not isinstance(val, int): raise...
-        # So we MUST cast here.
-
-        # To cast correctly, we need the command definition!
-
-        # Fetch definition first to know types
         supported = client.get_supported_commands(resolved_id)
         cmd_def = next((c for c in supported if c.command == command_name), None)
 
         if not cmd_def:
-            rprint(f"[red]Command '{command_name}' not supported by printer {resolved_id}.[/red]")
-            # Suggest close matches?
+            common.output_message(f"Command '{command_name}' not supported by printer {resolved_id}.", error=True)
             matches = fnmatch.filter([c.command for c in supported], f"*{command_name}*")
             if matches:
-                rprint(f"Did you mean: {', '.join(matches)}?")
+                common.output_message(f"Did you mean: {', '.join(matches)}?")
             return
 
-        # Merge kwargs into final_args, converting types
         for k, v in kwargs.items():
-            # Match k to arg name (command args are snake_case usually)
-            # CLI flags are kebab-case but cyclopts normalizes them to snake_case
-
-            # Find the argument definition
             arg_def = next((a for a in cmd_def.args if a.name == k), None)
             if arg_def:
-                # Cast based on type
                 if arg_def.type == "integer":
                     try:
                         final_args[k] = int(v)
                     except ValueError:
-                        rprint(f"[red]Argument '{k}' must be an integer (got '{v}')[/red]")
+                        common.output_message(f"Argument '{k}' must be an integer (got '{v}')", error=True)
                         return
                 elif arg_def.type == "number":
                     try:
                         final_args[k] = float(v)
                     except ValueError:
-                        rprint(f"[red]Argument '{k}' must be a number (got '{v}')[/red]")
+                        common.output_message(f"Argument '{k}' must be a number (got '{v}')", error=True)
                         return
                 elif arg_def.type == "boolean":
-                    # CLI flags for bools: usually presence means True
-                    # cyclopts **kwargs treats flags with values
                     if str(v).lower() in ("true", "1", "yes", "on"):
                         final_args[k] = True
                     elif str(v).lower() in ("false", "0", "no", "off"):
                         final_args[k] = False
                     else:
-                        rprint(f"[red]Argument '{k}' must be a boolean (got '{v}')[/red]")
+                        common.output_message(f"Argument '{k}' must be a boolean (got '{v}')", error=True)
                         return
                 else:
                     final_args[k] = v
             else:
-                # Unknown argument
-                # Client doesn't strict check unknown extra args in 'execute_printer_command',
-                # it blindly passes everything to send_command after verifying *required*.
-                # But it DOES check known args for types.
                 final_args[k] = v
 
         # 2. Execute
         success = client.execute_printer_command(resolved_id, command_name, final_args)
         if success:
-            rprint(f"[green]Successfully sent command '{command_name}' to {resolved_id}[/green]")
+            common.output_message(f"Successfully sent command '{command_name}' to {resolved_id}")
         else:
-            rprint(f"[red]Failed to send command '{command_name}'[/red]")
+            common.output_message(f"Failed to send command '{command_name}'", error=True)
 
     except ValueError as e:
-        rprint(f"[red]Validation Error:[/red] {e}")
+        common.output_message(f"Validation Error: {e}", error=True)
     except Exception as e:
-        rprint(f"[red]Error executing command:[/red] {e}")
+        common.output_message(f"Error executing command: {e}", error=True)
 
 
 @printer_app.command(name="storages")
@@ -618,35 +566,32 @@ def printer_storages(
     """List storage devices attached to a printer."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
     try:
         storages = client.get_printer_storages(resolved_id)
-        table = Table(title=f"Storages for {resolved_id}")
-        table.add_column("Name", style="cyan")
-        table.add_column("Type", style="green")
-        table.add_column("Mountpoint", style="magenta")
-        table.add_column("Free", style="yellow")
-        table.add_column("ReadOnly", style="red")
-
+        rows = []
         for s in storages:
             free_str = f"{s.free_space / 1024 / 1024 / 1024:.2f} GB" if s.free_space else "N/A"
-            table.add_row(
-                s.name,
-                s.type,
-                s.mountpoint or s.path,
-                free_str,
-                "Yes" if s.read_only else "No",
+            rows.append(
+                [
+                    s.name,
+                    s.type,
+                    s.mountpoint or s.path,
+                    free_str,
+                    "Yes" if s.read_only else "No",
+                ]
             )
-        common.console.print(table)
+        common.output_table(
+            f"Storages for {resolved_id}",
+            ["Name", "Type", "Mountpoint", "Free", "ReadOnly"],
+            rows,
+            column_styles=["cyan", "green", "magenta", "yellow", "red"],
+        )
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @files_printer_app.command(name="list")
@@ -656,32 +601,27 @@ def printer_files_list(
     """List files on the printer's storage."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
     try:
         files = client.get_printer_files(resolved_id)
-        table = Table(title=f"Files on {resolved_id}")
-        table.add_column("Name", style="cyan")
-        table.add_column("Path", style="magenta")
-        table.add_column("Size", style="green")
-        table.add_column("Modified", style="yellow")
-
+        rows = []
         for f in files:
             size_str = f"{f.size / 1024 / 1024:.2f} MB" if f.size else "N/A"
             mtime_str = "N/A"
             if f.m_timestamp:
                 mtime_str = datetime.datetime.fromtimestamp(f.m_timestamp).strftime("%Y-%m-%d %H:%M:%S")
-
-            table.add_row(f.name, f.path, size_str, mtime_str)
-        common.console.print(table)
+            rows.append([f.name, f.path or "", size_str, mtime_str])
+        common.output_table(
+            f"Files on {resolved_id}",
+            ["Name", "Path", "Size", "Modified"],
+            rows,
+            column_styles=["cyan", "magenta", "green", "yellow"],
+        )
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @files_printer_app.command(name="upload")
@@ -693,25 +633,20 @@ def printer_files_upload(
     """Upload a file to a printer's storage."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
     try:
         p = client.printers.get(resolved_id)
         teams = client.teams.list_teams()
-        # Find team by team_name
         target_team = next((t for t in teams if t.name == p.team_name), None)
         if not target_team and teams:
             target_team = teams[0]
-            rprint(f"[yellow]Could not resolve team ID for printer. Using first team: {target_team.name}[/yellow]")
+            common.output_message(f"Could not resolve team ID for printer. Using first team: {target_team.name}")
 
         if not target_team:
-            rprint("[red]Could not determine team for upload.[/red]")
+            common.output_message("Could not determine team for upload.", error=True)
             return
 
         from prusa.connect.client.cli.commands import file
@@ -719,7 +654,7 @@ def printer_files_upload(
         file.file_upload(path=path, team_id=target_team.id, destination=destination)
 
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @files_printer_app.command(name="download")
@@ -731,11 +666,7 @@ def printer_files_download(
     """Download a file that belongs to a printer's team."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        rprint(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
@@ -747,7 +678,7 @@ def printer_files_download(
             target_team = teams[0]
 
         if not target_team:
-            rprint("[red]Could not determine team for download.[/red]")
+            common.output_message("Could not determine team for download.", error=True)
             return
 
         from prusa.connect.client.cli.commands import file
@@ -755,7 +686,7 @@ def printer_files_download(
         file.file_download(file_hash=file_hash, team_id=target_team.id, output=output)
 
     except Exception as e:
-        rprint(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @printer_app.command(name="set-current")
@@ -763,4 +694,4 @@ def set_current_printer(printer_id: typing.Annotated[str, cyclopts.Parameter(hel
     """Set the default printer UUID for future commands."""
     config.settings.default_printer_id = printer_id
     config.save_json_config(config.settings)
-    rprint(f"[green]Successfully set default printer to {printer_id}[/green]")
+    common.output_message(f"Successfully set default printer to {printer_id}")

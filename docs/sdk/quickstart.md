@@ -61,7 +61,7 @@ from prusa.connect.client import PrusaConnectClient
 client = PrusaConnectClient()
 
 print("My Printers:")
-for printer in client.get_printers():
+for printer in client.printers.list_printers():
     status = printer.printer_state or "UNKNOWN"
     print(f"- {printer.name} ({status})")
 
@@ -86,7 +86,7 @@ from prusa.connect.client.exceptions import PrusaApiError, PrusaNetworkError
 client = PrusaConnectClient()
 
 try:
-    printers = client.get_printers()
+    printers = client.printers.list_printers()
 except PrusaApiError as e:
     # HTTP error from the Prusa Connect API (4xx / 5xx)
     print(f"API error {e.status_code}: {e}")

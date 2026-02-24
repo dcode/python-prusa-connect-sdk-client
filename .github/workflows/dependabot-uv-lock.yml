@@ -1,8 +1,11 @@
 name: "Dependabot: Update uv.lock"
+# Runs in the unprivileged pull_request context — no secrets, no write access.
+# The generated uv.lock is uploaded as an artifact for the companion
+# dependabot-uv-lock-commit workflow to consume once this run completes.
 permissions:
   contents: read
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize]
 jobs:
   lock:
@@ -24,32 +27,3 @@ jobs:
         with:
           name: uv-lock
           path: uv.lock
-  commit:
-    needs: lock
-    runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout the PR branch
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref }}
-          token: ${{ secrets.DEPENDABOT_PAT }}
-      - name: Download uv.lock
-        uses: actions/download-artifact@v7
-        with:
-          name: uv-lock
-      - name: Commit and push changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add uv.lock
-
-          if ! git diff --staged --quiet; then
-            git commit -m "chore(dependabot): synchronize uv.lock"
-            git push
-          else
-            echo "uv.lock is already up to date."
-          fi

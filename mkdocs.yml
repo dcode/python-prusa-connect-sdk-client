@@ -89,7 +89,7 @@ nav:
           - Client: api/client.md
           - Models: api/models.md
   - Development Resources:
-    - Contributing: contributing.md
+    - Contributing: CONTRIBUTING.md
     - Architecture Notes: internal_architecture.md
 not_in_nav: |
   /api/index.md

@@ -11,8 +11,8 @@ provides a frictionless, strongly-typed interface for the Prusa Connect API.
 >
 > This SDK is not an officially supported or endorsed product of Prusa Research.
 > It is developed and maintained by an independent developer and is not
-> affiliated with Prusa Research. See [Motivation & Design](#motivation-design)
-> for more information.
+> affiliated with Prusa Research. See
+> [Motivation & Design](#motivation-and-design) for more information.
 
 **Features:**
 
@@ -20,7 +20,7 @@ provides a frictionless, strongly-typed interface for the Prusa Connect API.
 - **Strong Typing:** Full Pydantic models for printers, jobs, cameras, and
   files.
 - **Batteries Included:** Retries, timeouts, and error handling out of the box.
-- **CLI Tool:** Managing printers from the terminal.
+- **CLI Tool:** Manage printers from the terminal with `prusactl`.
 
 ## Installation
 
@@ -36,7 +36,31 @@ Or install the lightweight library only:
 pip install prusa-connect-sdk-client
 ```
 
-## Motivation & Design
+## Quick Start
+
+```python
+from prusa.connect.client import PrusaConnectClient
+
+# Credentials are automatically loaded from the CLI session
+# (run `prusactl auth login` first)
+client = PrusaConnectClient()
+
+for printer in client.printers.list_printers():
+    status = printer.printer_state or "UNKNOWN"
+    print(f"- {printer.name} ({status})")
+```
+
+Resources are grouped by service — `client.printers`, `client.cameras`,
+`client.teams`, `client.files`, `client.jobs`, and `client.stats`.
+
+## Documentation
+
+Full documentation including the CLI reference, SDK quickstart, and API
+reference is available at:
+
+**<https://dcode.github.io/python-prusa-connect-sdk-client/>**
+
+## Motivation and Design
 
 My motivation to create this library is to provide a frictionless,
 strongly-typed interface for the Prusa Connect API. I want to be able to monitor
@@ -56,3 +80,13 @@ gladly accept Prusameters towards a new Core-generation printer. 😉
 
 My Printables Profile: :simple-printables:
 [dcode](https://www.printables.com/@dcode_3006269)
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for
+development setup, testing, and pull request guidelines.
+
+## License
+
+This project is licensed under the
+[GNU Affero General Public License v3.0 or later](LICENSE).

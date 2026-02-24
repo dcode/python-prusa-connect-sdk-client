@@ -1,10 +1,10 @@
 """File management commands."""
 
+import json
 import os
 import typing
 
 import cyclopts
-from rich.table import Table
 
 from prusa.connect.client.cli import common, config
 
@@ -22,26 +22,24 @@ def file_list(
     if not resolved_team_id:
         teams = client.teams.list_teams()
         if not teams:
-            common.console.print("[red]No teams found.[/red]")
+            common.output_message("No teams found.", error=True)
             return
         resolved_team_id = teams[0].id
-        common.console.print(
-            f"[yellow]No team ID provided. Using first team: {teams[0].name} ({resolved_team_id})[/yellow]"
-        )
+        common.output_message(f"No team ID provided. Using first team: {teams[0].name} ({resolved_team_id})")
 
     files = client.get_file_list(resolved_team_id)
 
-    table = Table(title=f"Files for Team {resolved_team_id}")
-    table.add_column("Name", style="cyan")
-    table.add_column("Type", style="green")
-    table.add_column("Size", style="magenta")
-    table.add_column("Hash", style="blue")
-
+    rows = []
     for f in files:
         size_str = f"{f.size.human_readable()}" if f.size else "N/A"
-        table.add_row(f.name or "N/A", f.type or "N/A", size_str, f.hash or "N/A")
+        rows.append([f.name or "N/A", f.type or "N/A", size_str, f.hash or "N/A"])
 
-    common.console.print(table)
+    common.output_table(
+        f"Files for Team {resolved_team_id}",
+        ["Name", "Type", "Size", "Hash"],
+        rows,
+        column_styles=["cyan", "green", "magenta", "blue"],
+    )
 
 
 def files_alias(
@@ -63,23 +61,23 @@ def file_upload(
     if not resolved_team_id:
         teams = client.teams.list_teams()
         if not teams:
-            common.console.print("[red]No teams found.[/red]")
+            common.output_message("No teams found.", error=True)
             return
         resolved_team_id = teams[0].id
 
     file_path = os.path.abspath(path)
     if not os.path.exists(file_path):
-        common.console.print(f"[red]File not found: {path}[/red]")
+        common.output_message(f"File not found: {path}", error=True)
         return
 
     filename = os.path.basename(file_path)
     size = os.path.getsize(file_path)
 
-    common.console.print(f"Initiating upload for [cyan]{filename}[/cyan] ({size} bytes)...")
+    common.output_message(f"Initiating upload for {filename} ({size} bytes)...")
     try:
         status = client.initiate_team_upload(resolved_team_id, destination, filename, size)
         upload_id = status.id
-        common.console.print(f"Upload initiated. ID: [magenta]{upload_id}[/magenta]. Uploading data...")
+        common.output_message(f"Upload initiated. ID: {upload_id}. Uploading data...")
 
         with open(file_path, "rb") as f:
             data = f.read()
@@ -91,9 +89,9 @@ def file_upload(
             content_type = "text/x.gcode"
 
         client.upload_team_file(resolved_team_id, upload_id, data, content_type=content_type)
-        common.console.print("[green]Upload successful![/green]")
+        common.output_message("Upload successful!")
     except Exception as e:
-        common.console.print(f"[red]Upload failed: {e}[/red]")
+        common.output_message(f"Upload failed: {e}", error=True)
 
 
 @file_app.command(name="download")
@@ -108,11 +106,11 @@ def file_download(
     if not resolved_team_id:
         teams = client.teams.list_teams()
         if not teams:
-            common.console.print("[red]No teams found.[/red]")
+            common.output_message("No teams found.", error=True)
             return
         resolved_team_id = teams[0].id
 
-    common.console.print(f"Downloading file with hash [cyan]{file_hash}[/cyan]...")
+    common.output_message(f"Downloading file with hash {file_hash}...")
     try:
         data = client.download_team_file(resolved_team_id, file_hash)
 
@@ -120,9 +118,9 @@ def file_download(
         with open(dest_path, "wb") as f:
             f.write(data)
 
-        common.console.print(f"[green]Downloaded to {dest_path}[/green]")
+        common.output_message(f"Downloaded to {dest_path}")
     except Exception as e:
-        common.console.print(f"[red]Download failed: {e}[/red]")
+        common.output_message(f"Download failed: {e}", error=True)
 
 
 @file_app.command(name="show")
@@ -139,38 +137,40 @@ def file_show(
     if not resolved_team_id:
         teams = client.teams.list_teams()
         if not teams:
-            common.console.print("[red]No teams found.[/red]")
+            common.output_message("No teams found.", error=True)
             return
         resolved_team_id = teams[0].id
 
     try:
         file = client.get_team_file(resolved_team_id, file_hash)
 
-        table = Table(title=f"File Details: {file.name}")
-        table.add_column("Property", style="cyan")
-        table.add_column("Value", style="green")
-
-        table.add_row("Name", file.name)
-        table.add_row("Type", getattr(file, "type", "N/A"))
+        rows: list[list[str]] = [["Name", file.name], ["Type", getattr(file, "type", "N/A")]]
         if getattr(file, "size", None) is not None:
             size_val = typing.cast("int", file.size)
-            size_str = f"{size_val / 1024 / 1024:.2f} MB"
-            table.add_row("Size", size_str)
+            rows.append(["Size", f"{size_val / 1024 / 1024:.2f} MB"])
         if getattr(file, "hash", None):
-            table.add_row("Hash", file.hash)
+            rows.append(["Hash", file.hash])
 
-        common.console.print(table)
+        common.output_table(
+            f"File Details: {file.name}",
+            ["Property", "Value"],
+            rows,
+            column_styles=["cyan", "green"],
+        )
 
         if detailed:
-            import json
-
-            common.console.print("\n[bold]Detailed Information:[/bold]")
-            detail_table = Table(show_header=False, box=None)
+            detail_rows = []
             for k, v in file.model_dump(mode="json").items():
                 if v is not None and k not in ["name", "type", "size", "hash"]:
                     val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
-                    detail_table.add_row(f"[cyan]{k.title().replace('_', ' ')}[/cyan]:", val_str)
-            common.console.print(detail_table)
+                    detail_rows.append([k.title().replace("_", " "), val_str])
+            if detail_rows:
+                common.output_table(
+                    "Detailed Information",
+                    ["Field", "Value"],
+                    detail_rows,
+                    column_styles=["cyan", None],
+                )
 
     except Exception as e:
-        common.console.print(f"[red]Failed to fetch file details: {e}[/red]")
+        common.output_message(f"Failed to fetch file details: {e}", error=True)
