@@ -9,7 +9,6 @@ import typing
 
 import cyclopts
 import requests  # noqa: TC002
-from rich import print as rprint
 
 from prusa.connect.client.cli import common
 
@@ -49,10 +48,10 @@ def api_command(
         res: requests.Response = client._request(method, path, raw=True, **kwargs)
 
         if response_headers:
-            rprint(f"{getattr(res, 'status_code', None)} {getattr(res, 'reason', None)}")
+            print(f"{getattr(res, 'status_code', None)} {getattr(res, 'reason', None)}")
             for k, v in res.headers.items():
-                rprint(f"[bold]{k}:[/bold] {v}")
-            rprint("")
+                print(f"{k}: {v}")
+            print("")
 
         if stream:
             # Handle streaming
@@ -60,7 +59,7 @@ def api_command(
                 with open(output, "wb") as f:
                     for chunk in res.iter_content(chunk_size=8192):
                         f.write(chunk)
-                rprint(f"[green]Streamed response to {output}[/green]")
+                common.output_message(f"Streamed response to {output}")
             else:
                 # Stream to stdout
                 for chunk in res.iter_content(chunk_size=8192):
@@ -88,7 +87,7 @@ def api_command(
                             f.write(res.text)
                     else:
                         output.write_bytes(res.content)
-                rprint(f"[green]Response saved to {output}[/green]")
+                common.output_message(f"Response saved to {output}")
         else:
             if response_body:
                 if "application/json" in content_type.lower():
@@ -103,4 +102,4 @@ def api_command(
             # If piping or streaming, print error to stderr
             sys.stderr.write(f"API Request Failed: {e}\n")
         else:
-            rprint(f"[red]API Request Failed: {e}[/red]")
+            common.output_message(f"API Request Failed: {e}", error=True)

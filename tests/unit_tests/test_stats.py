@@ -39,7 +39,7 @@ def test_get_printer_usage_stats(client):
     assert stats.printer_name == "printer-name"
     assert len(stats.data) == 2
     assert stats.data[0].name == "printing"
-    assert stats.data[0].value == 10
+    assert stats.data[0].duration.total_seconds() == 10.0
     assert isinstance(stats.from_time, datetime.date)
 
 

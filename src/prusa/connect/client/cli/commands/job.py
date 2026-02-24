@@ -4,8 +4,6 @@ import datetime
 import typing
 
 import cyclopts
-from rich import print as rprint
-from rich.table import Table
 
 from prusa.connect.client.cli import common, config
 
@@ -38,15 +36,12 @@ def job_list(
         all_jobs.extend(client.get_team_jobs(team, state=state, limit=limit))
     else:
         # Aggregation mode: Get jobs from ALL printers (cached)
-        # This is preferred over iterating teams if we want "my printers" context
         try:
             printers = client.printers.list_printers()
             for p in printers:
                 if not p.uuid:
                     continue
                 try:
-                    # We fetch 'limit' items from EACH printer to ensure we have enough candidates for global sort
-                    # If limit is None, we fetch default page
                     p_jobs = client.get_printer_jobs(p.uuid, state=state, limit=limit)
                     all_jobs.extend(p_jobs)
                 except Exception as e:
@@ -55,44 +50,39 @@ def job_list(
             common.logger.error("Failed to fetch printer list for aggregation", error=str(e))
 
     # Sort by 'end' time (descending) to show most recent first
-    # Fallback to 'start' or 'id' if 'end' is missing
     def sort_key(j):
-        # We want descending order, so we return a tuple that compares correctly
-        # Use 0 as fallback for timestamps if missing
         return (j.end or 0, j.start or 0, j.id or 0)
 
     all_jobs.sort(key=sort_key, reverse=True)
 
-    # Apply global limit
     if limit is not None:
         all_jobs = all_jobs[:limit]
 
-    table = Table(title="Jobs")
-    table.add_column("ID", style="cyan")
-    table.add_column("Printer", style="magenta")
-    table.add_column("State", style="green")
-    table.add_column("Name", style="blue")
-    table.add_column("Progress", style="yellow")
-    table.add_column("Ended", style="dim")
-
+    rows = []
     for j in all_jobs:
-        # Format timestamp
         ended_str = "N/A"
         if j.end:
             ended_str = datetime.datetime.fromtimestamp(j.end).strftime("%Y-%m-%d %H:%M")
         elif j.state == "PRINTING":
             ended_str = "In Progress"
 
-        table.add_row(
-            str(j.id),
-            j.printer_uuid or "Unknown",
-            j.state.name,
-            j.file.name if j.file else "Unknown",
-            f"{j.progress}%" if j.progress is not None else "N/A",
-            ended_str,
+        rows.append(
+            [
+                str(j.id),
+                j.printer_uuid or "Unknown",
+                j.state.name,
+                j.file.name if j.file else "Unknown",
+                f"{j.progress}%" if j.progress is not None else "N/A",
+                ended_str,
+            ]
         )
 
-    common.console.print(table)
+    common.output_table(
+        "Jobs",
+        ["ID", "Printer", "State", "Name", "Progress", "Ended"],
+        rows,
+        column_styles=["cyan", "magenta", "green", "blue", "yellow", "dim"],
+    )
 
 
 def jobs_alias(
@@ -119,7 +109,7 @@ def job_queued(
         try:
             all_jobs.extend(client.get_printer_queue(printer))
         except Exception as e:
-            rprint(f"[red]Failed to fetch queue for {printer}: {e}[/red]")
+            common.output_message(f"Failed to fetch queue for {printer}: {e}", error=True)
     else:
         # Aggregate from all printers
         try:
@@ -133,31 +123,26 @@ def job_queued(
                 except Exception as e:
                     common.logger.warning(f"Failed to fetch queue for printer {p.name}", error=str(e))
         except Exception as e:
-            rprint(f"[red]Failed to fetch printer list: {e}[/red]")
+            common.output_message(f"Failed to fetch printer list: {e}", error=True)
 
-    # Sort by creation/id (ascending for queue usually? or purely by order returned?)
-    # Usually queues are FIFO, but aggregation might mix them.
-    # We'll trust the order or sort by ID/date if available.
-    # For now, let's keep them somewhat creation-ordered if possible.
+    if not all_jobs:
+        common.output_message("No jobs in queue.")
+        return
 
-    table = Table(title="Job Queue")
-    table.add_column("ID", style="cyan")
-    table.add_column("Printer", style="magenta")
-    table.add_column("State", style="green")
-    table.add_column("Name", style="blue")
-    table.add_column("Source", style="dim")
-
+    rows = []
     for j in all_jobs:
         source = "Unknown"
         if j.source_info:
             source = j.source_info.public_name or j.source_info.first_name or "Unknown"
 
-        table.add_row(str(j.id), j.printer_uuid or "Unknown", j.state, j.file.name if j.file else "Unknown", source)
+        rows.append([str(j.id), j.printer_uuid or "Unknown", j.state, j.file.name if j.file else "Unknown", source])
 
-    if not all_jobs:
-        rprint("[yellow]No jobs in queue.[/yellow]")
-    else:
-        common.console.print(table)
+    common.output_table(
+        "Job Queue",
+        ["ID", "Printer", "State", "Name", "Source"],
+        rows,
+        column_styles=["cyan", "magenta", "green", "blue", "dim"],
+    )
 
 
 @job_app.command(name="show")
@@ -173,40 +158,42 @@ def job_show(
     client = common.get_client()
     resolved_printer_id = printer or config.settings.default_printer_id
     if not resolved_printer_id:
-        rprint("[red]Printer UUID is required. Provide --printer or set a default.[/red]")
+        common.output_message("Printer UUID is required. Provide --printer or set a default.", error=True)
         return
     try:
         job = client.get_job(resolved_printer_id, job_id)
 
-        # Basic Info
-        rprint(f"[bold cyan]Job {job.id}[/bold cyan]")
-        rprint(f"State: [green]{job.state}[/green]")
+        rows = [["ID", str(job.id)], ["State", str(job.state)]]
         if job.file:
-            rprint(f"File: {job.file.name}")
+            rows.append(["File", job.file.name])
         if job.progress is not None:
-            rprint(f"Progress: {job.progress}%")
+            rows.append(["Progress", f"{job.progress}%"])
         if job.time_printing:
-            rprint(f"Time Printing: {job.time_printing}s")
+            rows.append(["Time Printing", str(job.time_printing)])
+
+        common.output_table(
+            f"Job {job.id}",
+            ["Field", "Value"],
+            rows,
+            column_styles=["cyan", None],
+        )
 
         # Cancelable Objects
         if job.cancelable_objects:
-            rprint("\n[bold]Cancelable Objects:[/bold]")
-            table = Table(show_header=True, header_style="bold magenta")
-            table.add_column("ID", style="cyan", justify="right")
-            table.add_column("Name", style="white")
-
-            for obj in job.cancelable_objects:
-                table.add_row(str(obj.id), obj.name)
-
-            common.console.print(table)
+            obj_rows = [[str(obj.id), obj.name] for obj in job.cancelable_objects]
+            common.output_table(
+                "Cancelable Objects",
+                ["ID", "Name"],
+                obj_rows,
+                column_styles=["cyan", "white"],
+            )
         else:
-            rprint("\n[dim]No cancelable objects found for this job.[/dim]")
+            common.output_message("No cancelable objects found for this job.")
 
         if detailed:
             import json
 
-            rprint("\n[bold]Detailed Information:[/bold]")
-            detail_table = Table(show_header=False, box=None)
+            detail_rows = []
             for k, v in job.model_dump(mode="json").items():
                 if v is not None and k not in [
                     "id",
@@ -217,8 +204,15 @@ def job_show(
                     "cancelable_objects",
                 ]:
                     val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
-                    detail_table.add_row(f"[cyan]{k.title().replace('_', ' ')}[/cyan]:", val_str)
-            common.console.print(detail_table)
+                    detail_rows.append([k.title().replace("_", " "), val_str])
+
+            if detail_rows:
+                common.output_table(
+                    "Detailed Information",
+                    ["Field", "Value"],
+                    detail_rows,
+                    column_styles=["cyan", None],
+                )
 
     except Exception as e:
-        rprint(f"[red]Failed to fetch job details: {e}[/red]")
+        common.output_message(f"Failed to fetch job details: {e}", error=True)

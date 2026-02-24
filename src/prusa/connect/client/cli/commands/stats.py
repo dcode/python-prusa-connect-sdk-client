@@ -4,12 +4,17 @@ import datetime
 import typing
 
 import cyclopts
-from rich.table import Table
 
 from prusa.connect.client.cli import common, config
 
 stats_app = cyclopts.App(name="stats", help="Printer statistics")
 logger = common.logger
+
+_NO_PRINTER = (
+    "No printer ID provided and no default configured.\n"
+    "Hint: Run 'prusactl printer list' to find a UUID, then "
+    "'prusactl printer set-current <uuid>' to set the default."
+)
 
 
 @stats_app.command(name="usage")
@@ -20,15 +25,12 @@ def stats_usage(
         datetime.date | None, cyclopts.Parameter(name=["--from", "-f"], help="Start date")
     ] = None,
     to_date: typing.Annotated[datetime.date | None, cyclopts.Parameter(name=["--to", "-t"], help="End date")] = None,
+    seconds: typing.Annotated[bool, cyclopts.Parameter(help="Output duration in seconds")] = False,
 ):
     """Show printer usage statistics (printing vs not printing)."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        common.console.print(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then\n"
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
@@ -39,16 +41,18 @@ def stats_usage(
 
     try:
         stats = client.get_printer_usage_stats(resolved_id, from_time=from_date, to_time=to_date)
-        table = Table(title=f"Usage Stats for {stats.printer_name} ({from_date} to {to_date})")
-        table.add_column("Type", style="cyan")
-        table.add_column("Value", style="magenta")
-
-        for entry in stats.data:
-            table.add_row(entry.name, str(entry.value))
-
-        common.console.print(table)
+        rows = [
+            [entry.name, str(entry.duration) if not seconds else str(entry.duration.total_seconds())]
+            for entry in stats.data
+        ]
+        common.output_table(
+            f"Usage Stats for {stats.printer_name} ({from_date} to {to_date})",
+            ["Type", "Duration"],
+            rows,
+            column_styles=["cyan", "magenta"],
+        )
     except Exception as e:
-        common.console.print(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @stats_app.command(name="material")
@@ -63,11 +67,7 @@ def stats_material(
     """Show material quantity statistics."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        common.console.print(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
@@ -79,22 +79,24 @@ def stats_material(
     try:
         stats = client.get_printer_material_stats(resolved_id, from_time=from_date, to_time=to_date)
 
-        table = Table(title=f"Material Stats for {stats.printer_name} ({from_date} to {to_date})")
-        table.add_column("Material", style="cyan")
-        table.add_column("Usage", style="magenta")
-
+        rows = []
         if not stats.data:
-            table.add_row("No data available", "")
+            rows.append(["No data available", ""])
         else:
             for entry in stats.data:
                 if isinstance(entry, dict):
-                    table.add_row(entry.get("name", "Unknown"), str(entry.get("value", "N/A")))
+                    rows.append([entry.get("name", "Unknown"), str(entry.get("value", "N/A"))])
                 else:
-                    table.add_row("Raw Data", str(entry))
+                    rows.append(["Raw Data", str(entry)])
 
-        common.console.print(table)
+        common.output_table(
+            f"Material Stats for {stats.printer_name} ({from_date} to {to_date})",
+            ["Material", "Usage"],
+            rows,
+            column_styles=["cyan", "magenta"],
+        )
     except Exception as e:
-        common.console.print(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @stats_app.command(name="jobs")
@@ -109,11 +111,7 @@ def stats_jobs(
     """Show job success statistics."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        common.console.print(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
@@ -129,20 +127,20 @@ def stats_jobs(
         stats.series.sort(key=lambda x: x.status)
 
         logger.debug("Job Stats", data=stats)
-        table = Table(title=f"Job Success Stats for {stats.printer_name} ({from_date} to {to_date})")
-        table.add_column("Status", style="cyan")
-
-        for date in stats.date_axis:
-            table.add_column(date, style="magenta")
-
+        columns = ["Status", *list(stats.date_axis)]
+        rows = []
         for series in stats.series:
-            row = [series.status.name]
-            row.extend(str(v) for v in series.data)
-            table.add_row(*row)
+            row = [series.status.name] + [str(v) for v in series.data]
+            rows.append(row)
 
-        common.console.print(table)
+        common.output_table(
+            f"Job Success Stats for {stats.printer_name} ({from_date} to {to_date})",
+            columns,
+            rows,
+            column_styles=["cyan"] + ["magenta"] * len(stats.date_axis),
+        )
     except Exception as e:
-        common.console.print(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)
 
 
 @stats_app.command(name="planned")
@@ -157,11 +155,7 @@ def stats_planned(
     """Show planned tasks statistics."""
     resolved_id = printer_id or config.settings.default_printer_id
     if not resolved_id:
-        common.console.print(
-            "[red]No printer ID provided and no default configured.[/red]\n"
-            "[dim]Hint: Run 'prusactl printer list' to find a UUID, then "
-            "'prusactl printer set-current <uuid>' to set the default.[/dim]"
-        )
+        common.output_message(_NO_PRINTER, error=True)
         return
 
     client = common.get_client()
@@ -172,16 +166,19 @@ def stats_planned(
 
     try:
         stats = client.get_printer_planned_tasks_stats(resolved_id, from_time=from_date, to_time=to_date)
-        table = Table(title=f"Planned Tasks for {stats.series.printer_name} ({from_date} to {to_date})")
-        table.add_column("Hour (UTC)", style="cyan")
-        table.add_column("Count", style="magenta")
 
+        rows = []
         if stats.series and stats.series.data:
             for hour, count in stats.series.data:
-                table.add_row(f"{hour:02d}:00", str(count))
+                rows.append([f"{hour:02d}:00", str(count)])
         else:
-            table.add_row("No data available", "")
+            rows.append(["No data available", ""])
 
-        common.console.print(table)
+        common.output_table(
+            f"Planned Tasks for {stats.series.printer_name} ({from_date} to {to_date})",
+            ["Hour (UTC)", "Count"],
+            rows,
+            column_styles=["cyan", "magenta"],
+        )
     except Exception as e:
-        common.console.print(f"[red]Error:[/red] {e}")
+        common.output_message(f"Error: {e}", error=True)

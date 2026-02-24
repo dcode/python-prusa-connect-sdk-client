@@ -29,7 +29,7 @@ app.command(stats.stats_app)
 
 # Register Aliases and Commands
 app.command(printer.printers_alias, name="printers")
-app.command(camera.camera_alias, name="cameras")
+app.command(camera.cameras_alias, name="cameras")
 app.command(job.jobs_alias, name="jobs")
 app.command(file.files_alias, name="files")
 app.command(team.teams_alias, name="teams")
@@ -44,10 +44,20 @@ def entry_point(
         bool, cyclopts.Parameter(name=["--verbose", "-v"], help="Enable verbose logging")
     ] = False,
     debug: typing.Annotated[bool, cyclopts.Parameter(name=["--debug"], help="Enable debug logging")] = False,
+    output_format: typing.Annotated[
+        str | None,
+        cyclopts.Parameter(
+            name=["--format"],
+            help="Output format: rich (default on TTY), plain (tab-separated), json",
+        ),
+    ] = None,
 ):
     """Main entry point handling global flags."""
     # Configure logging
     common.configure_logging(verbose, debug)
+
+    if output_format is not None:
+        common.set_output_format(output_format)
 
     if tokens is None:
         tokens = []

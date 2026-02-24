@@ -111,6 +111,23 @@ prusactl printer --help
 prusactl stats --help
 ```
 
+## Step 10: Change Output Format
+
+By default, `prusactl` uses `rich` output (colored tables and text) when running
+in a terminal, and `plain` output (tab-separated) when piped or redirected. You
+can explicitly set the output format using the `--format` flag:
+
+```bash
+# JSON output (useful for jq or other scripts)
+prusactl printer list --format json
+
+# Plain text (tab-separated)
+prusactl printer list --format plain
+
+# Force rich output even when redirected
+prusactl printer list --format rich
+```
+
 ## Configuration File
 
 Settings like default printer, team, and camera IDs are stored in a JSON file in
@@ -128,8 +145,13 @@ You can edit this file directly. Supported keys:
 {
   "default_printer_id": "your-printer-uuid",
   "default_team_id": 12345,
-  "default_camera_id": "your-camera-id"
+  "default_camera_id": "your-camera-id",
+  "output_format": "json"
 }
 ```
 
-Environment variables (e.g. `DEFAULT_PRINTER_ID`) override file values.
+Environment variables override file values:
+
+- `PRUSACTL_OUTPUT_FORMAT`: Set to `rich`, `plain`, or `json`.
+- `DEFAULT_PRINTER_ID`: Override the default printer UUID.
+- `DEFAULT_TEAM_ID`: Override the default team ID.

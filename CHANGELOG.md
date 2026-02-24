@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-02-23
 
 ### Breaking Changes
 
@@ -35,12 +35,20 @@ and this project adheres to
   with optional disk caching and TTL.
 - **Validated command execution** — `client.execute_printer_command()` validates
   arguments against the printer's reported command schema before sending.
-- **Camera WebRTC signaling client** (`PrusaCameraClient`) for pan/tilt control
-  and image adjustment via the Prusa signaling protocol.
+- **Camera Signal.IO signaling client** (`PrusaCameraClient`) for pan/tilt
+  control and image adjustment via the Prusa signaling protocol.
 - **G-code metadata parser** (`client.validate_gcode(path)`) for pre-flight
   checks before uploading.
 - **Persistent credential caching** — CLI credentials are stored in the platform
   config directory and auto-loaded by the SDK.
+- **CLI output format control** — the `--format` global flag selects between
+  `rich` (coloured tables; default when stdout is a TTY), `plain`
+  (tab-separated text with no ANSI escapes or table borders; default when
+  stdout is not a TTY), and `json` (JSON array per table to stdout, all status
+  messages to stderr).
+- The active format can also be set via the `output_format` key in `config.json`
+  or the `PRUSACTL_OUTPUT_FORMAT` environment variable; the priority is: CLI
+  flag → env var → config file → TTY auto-detect.
 
 ### Changed
 

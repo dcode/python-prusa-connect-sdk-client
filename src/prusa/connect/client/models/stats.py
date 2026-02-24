@@ -61,7 +61,7 @@ class PrintingNotPrintingEntry(WarnExtraFieldsModel):
     """Represents a single entry in printing vs not printing stats."""
 
     name: str
-    value: int
+    duration: datetime.timedelta = pydantic.Field(..., alias="value")
 
 
 class PrintingNotPrinting(StatsModel):

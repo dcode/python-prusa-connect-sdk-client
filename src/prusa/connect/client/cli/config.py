@@ -1,5 +1,6 @@
 """Configuration handling for the CLI."""
 
+import enum
 import json
 import pathlib
 import typing
@@ -39,6 +40,14 @@ def load_json_config() -> dict[str, typing.Any]:
     return {}
 
 
+class OutputFormat(enum.StrEnum):
+    """Enum of available console out formats."""
+
+    RICH = "rich"
+    PLAIN = "plain"
+    JSON = "json"
+
+
 class Settings(pydantic_settings.BaseSettings):
     """Application-wide settings loaded from config.json, .env or environment variables."""
 
@@ -51,6 +60,14 @@ class Settings(pydantic_settings.BaseSettings):
 
     tokens_file: pathlib.Path = pydantic.Field(default_factory=auth.get_default_token_path)
     cache_ttl_hours: int = consts.DEFAULT_CACHE_TTL_HOURS
+
+    # Output format: "rich" (colored tables), "plain" (tab-separated, no markup),
+    # or "json" (JSON arrays to stdout). None means auto-detect from TTY.
+    # Override via env var PRUSACTL_OUTPUT_FORMAT or config.json key "output_format".
+    output_format: OutputFormat | None = pydantic.Field(
+        default=None,
+        validation_alias=pydantic.AliasChoices("PRUSACTL_OUTPUT_FORMAT", "output_format"),
+    )
 
     model_config = pydantic_settings.SettingsConfigDict(env_file=".env", extra="ignore")
 
