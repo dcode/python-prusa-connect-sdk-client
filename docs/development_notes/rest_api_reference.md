@@ -1,6 +1,7 @@
 # Captured Prusa Connect API Interactions
 
-NOTE: This is mostly notes that I made as I went through API calls
+NOTE: This is mostly notes that I made as I went through API calls. See
+`/docs/api/openapi.json` for better documentation.
 
 ## Overview
 

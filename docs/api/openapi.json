@@ -1,0 +1,4781 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Prusa Connect API (Inferred)",
+    "version": "20260225-5dfbf71e",
+    "description": "This is NOT official Prusa Connect API documentation. This is the result of manually reverse engineering the platform when developing the `prusa-connect-sdk-client` Python library. See <https://dcode.github.io/python-prusa-connect-sdk-client/> for full documentation.\n\n## Authentication\n\nMost endpoints require a Bearer JWT access token obtained via OAuth2 PKCE flow.\n\n**OAuth2 Endpoints (on `account.prusa3d.com`):**\n\n- Authorization: `https://account.prusa3d.com/o/authorize/`\n- Token: `https://account.prusa3d.com/o/token/`\n- Client ID: `MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4`\n- Redirect URI: `https://connect.prusa3d.com/login/auth-callback`\n- PKCE Method: S256\n\nOnce obtained, pass the access token as `Authorization: Bearer <token>` on all authenticated endpoints.\n\n## Notes on Field Names\n\nMany response fields use API-side names that differ from SDK model attributes. Aliases are noted in schema descriptions where observed."
+  },
+  "servers": [
+    {
+      "url": "https://connect.prusa3d.com",
+      "description": "Prusa Connect production server"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Endpoints for application authentication."
+    },
+    {
+      "name": "Platform",
+      "description": "Public endpoints for API version and application configuration. No authentication required."
+    },
+    {
+      "name": "Printers",
+      "description": "List and inspect printers, retrieve supported commands, and access printer-local files and storage."
+    },
+    {
+      "name": "Jobs",
+      "description": "Job history, job details, failure reasons, and the planned print queue."
+    },
+    {
+      "name": "Teams",
+      "description": "Team (workspace) management and membership."
+    },
+    {
+      "name": "Files",
+      "description": "Team cloud storage: list, download, and upload G-code / firmware files."
+    },
+    {
+      "name": "Cameras",
+      "description": "List cameras and retrieve or trigger snapshots."
+    },
+    {
+      "name": "Notifications",
+      "description": "User notification feed."
+    },
+    {
+      "name": "Statistics",
+      "description": "Per-printer usage and job success statistics over a date range."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Prusa Connect JWT access token passed as `Authorization: Bearer <token>`. Obtain via the `PrusaOAuth2` authorization code + PKCE flow. Token claims include: `jti` (token ID), `sub` (user ID), `exp` (expiry), `sid` (session ID), `app` (app slug), `type` (token type), `connect_id`."
+      },
+      "PrusaOAuth2": {
+        "type": "oauth2",
+        "description": "OAuth2 authorization code flow with PKCE (S256) against the Prusa Account identity provider. The `client_id` is `MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4` and the registered redirect URI is `https://connect.prusa3d.com/login/auth-callback`. Include `code_challenge` (SHA-256 of the verifier, base64url-encoded) and `code_challenge_method=S256` in the authorization request. Exchange the returned code for tokens at the token URL, supplying the original `code_verifier`. The resulting access token is then passed as a Bearer JWT to all Prusa Connect API endpoints.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://account.prusa3d.com/o/authorize/",
+            "tokenUrl": "https://account.prusa3d.com/o/token/",
+            "refreshUrl": "https://account.prusa3d.com/o/token/",
+            "scopes": {
+              "openid": "OpenID Connect identity token.",
+              "basic_info": "Read access to basic account profile information.",
+              "email_lists": "Access to email list subscription preferences.",
+              "connect": "Access to Prusa Connect resources (printers, jobs, files, etc.).",
+              "user_operations": "Perform user-level operations such as team management."
+            },
+            "x-usePkce": {
+              "disableManualConfiguration": true,
+              "hideClientSecretInput": false
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "LimitParam": {
+        "name": "limit",
+        "in": "query",
+        "description": "Maximum number of items to return.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 100
+        }
+      },
+      "OffsetParam": {
+        "name": "offset",
+        "in": "query",
+        "description": "Number of items to skip.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "PrinterUuidParam": {
+        "name": "uuid",
+        "in": "path",
+        "required": true,
+        "description": "The UUID of the printer.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "TeamIdParam": {
+        "name": "team_id",
+        "in": "path",
+        "required": true,
+        "description": "The numeric ID of the team.",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "schemas": {
+      "Pager": {
+        "type": "object",
+        "description": "Pagination metadata returned alongside list responses.",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "integer",
+            "description": "Index of first item in this page."
+          },
+          "to": {
+            "type": "integer",
+            "description": "Index of last item in this page."
+          }
+        }
+      },
+      "NetworkInfo": {
+        "type": "object",
+        "description": "Network configuration details for a printer.",
+        "properties": {
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ipv4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ipv6": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mac": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wifi_ssid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lan_ipv4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lan_mac": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SourceInfo": {
+        "type": "object",
+        "description": "Information about the source of an action or resource (e.g., a user).",
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatar": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Avatar URL. Relative paths are automatically prefixed with `https://media.printables.com/media/`."
+          }
+        }
+      },
+      "Owner": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SourceInfo"
+          }
+        ],
+        "description": "Represents the owner of a resource. Same fields as SourceInfo."
+      },
+      "SyncInfo": {
+        "type": "object",
+        "description": "Synchronization details for a file or resource.",
+        "properties": {
+          "synced_by": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "synced": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Temperatures": {
+        "type": "object",
+        "description": "Current and target temperatures for a printer. Returned nested under the `temp` key in printer responses.",
+        "properties": {
+          "temp_nozzle": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Current nozzle temperature in °C."
+          },
+          "temp_bed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Current bed temperature in °C."
+          },
+          "target_nozzle": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Target nozzle temperature in °C."
+          },
+          "target_bed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Target bed temperature in °C."
+          }
+        }
+      },
+      "FirmwareSupport": {
+        "type": "object",
+        "description": "Firmware version and support information for a printer.",
+        "properties": {
+          "latest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "stable": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prerelease": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Tool": {
+        "type": "object",
+        "description": "Represents a print head / extruder tool.",
+        "properties": {
+          "material": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "temp": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "nozzle_diameter": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "fan_hotend": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "fan_print": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "mmu": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "hardened": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "high_flow": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "SlotInfo": {
+        "type": "object",
+        "description": "MMU (Multi-Material Unit) slot information.",
+        "properties": {
+          "active": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Index of the currently active slot."
+          },
+          "slots": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Tool"
+            }
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "JobInfo": {
+        "type": "object",
+        "description": "Snapshot of the job currently running on a printer. Returned nested under `job_info` in printer responses.",
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "origin_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Print progress 0.0–100.0."
+          },
+          "time_printing": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Elapsed print time in seconds."
+          },
+          "time_remaining": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Estimated remaining time in seconds."
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preview_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "model_weight": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "weight_remaining": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "print_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lifetime_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CameraResolution": {
+        "type": "object",
+        "required": [
+          "width",
+          "height"
+        ],
+        "properties": {
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          }
+        }
+      },
+      "CameraNetworkInfo": {
+        "type": "object",
+        "properties": {
+          "wifi_mac": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wifi_ipv4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wifi_ssid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CameraConfig": {
+        "type": "object",
+        "description": "Internal configuration snapshot for a camera.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driver": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "firmware": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rotation": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "camera_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/CameraResolution"
+          },
+          "manufacturer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "network_info": {
+            "$ref": "#/components/schemas/CameraNetworkInfo"
+          },
+          "trigger_scheme": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CameraOptions": {
+        "type": "object",
+        "properties": {
+          "available_resolutions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CameraResolution"
+            }
+          }
+        }
+      },
+      "Camera": {
+        "type": "object",
+        "description": "Camera device associated with a printer or team.",
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Numeric ID used for snapshot retrieval."
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Alphanumeric token used for snapshot triggers."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snapshot_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "config": {
+            "$ref": "#/components/schemas/CameraConfig"
+          },
+          "options": {
+            "$ref": "#/components/schemas/CameraOptions"
+          },
+          "capabilities": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "features": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort_order": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "registered": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "printer_uuid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "snapshots": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Printer": {
+        "type": "object",
+        "description": "Full printer object returned by `/app/printers` and `/app/printers/{uuid}`.",
+        "properties": {
+          "uuid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "printer_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Also returned as `state` in some responses. Falls back to `UNKNOWN` for unrecognized values.",
+            "enum": [
+              "READY",
+              "IDLE",
+              "BUSY",
+              "MANIPULATING",
+              "PRINTING",
+              "PAUSED",
+              "FINISHED",
+              "STOPPED",
+              "ATTENTION",
+              "ERROR",
+              "OFFLINE",
+              "UNKNOWN"
+            ]
+          },
+          "state_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connect_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disabled": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "printer_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "printer_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "printer_type_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "firmware": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Current firmware version string. SDK alias: `firmware_version`."
+          },
+          "support": {
+            "$ref": "#/components/schemas/FirmwareSupport"
+          },
+          "network_info": {
+            "$ref": "#/components/schemas/NetworkInfo"
+          },
+          "tools": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Tool"
+            }
+          },
+          "slot": {
+            "$ref": "#/components/schemas/SlotInfo"
+          },
+          "temp": {
+            "$ref": "#/components/schemas/Temperatures",
+            "description": "Current temperatures. SDK alias: `telemetry`."
+          },
+          "job_info": {
+            "$ref": "#/components/schemas/JobInfo",
+            "description": "Current job snapshot. SDK alias: `job`."
+          },
+          "cameras": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Camera"
+            }
+          },
+          "nozzle_diameter": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "speed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Current print speed percentage."
+          },
+          "flow": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Current flow rate percentage."
+          },
+          "axis_x": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "axis_y": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "axis_z": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "team_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organization_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prusalink_api_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prusaconnect_api_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_online": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp of last online time."
+          },
+          "created": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "sn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Printer serial number."
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_beta": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "supported_printer_models": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "printable_extension": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_functionalities": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_filename": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "slots": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Number of MMU slots."
+          },
+          "rights_r": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rights_w": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rights_u": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "owner": {
+            "$ref": "#/components/schemas/Owner"
+          },
+          "flags": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "filament": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "enclosure": {},
+          "appendix": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "time_delta": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "inaccurate_estimates": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "groups": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {}
+          }
+        }
+      },
+      "CommandArgument": {
+        "type": "object",
+        "description": "Describes a single argument for a printer command.",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "integer",
+              "boolean",
+              "object",
+              "number"
+            ]
+          },
+          "required": {
+            "type": "boolean",
+            "default": false
+          },
+          "default": {},
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "type": "boolean",
+            "default": true
+          },
+          "output": {
+            "type": "boolean",
+            "default": false
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CommandDefinition": {
+        "type": "object",
+        "description": "Defines a command that can be sent to a printer.",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Command identifier. Known values include: `SET_PRINTER_READY`, `CANCEL_PRINTER_READY`, `PAUSE_PRINT`, `RESUME_PRINT`, `STOP_PRINT`, `RESET_PRINTER`, `UNLOAD_FILAMENT`, `SEND_INFO`, `STOP_TRANSFER`, `SEND_STATE_INFO`, `RESET`, `DISABLE_STEPPERS`, `BEEP`."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommandArgument"
+            },
+            "default": []
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "G-code template, if applicable."
+          },
+          "executable_from_state": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of printer states from which this command can be executed."
+          },
+          "duplicates_allowed": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "JobStatus": {
+        "type": "string",
+        "description": "Status of a job. `FIN_UNKNOWN` is returned for unrecognized values.",
+        "enum": [
+          "PRINTING",
+          "FINISHED",
+          "FIN_OK",
+          "FIN_STOPPED",
+          "FIN_ERROR",
+          "FIN_UNKNOWN"
+        ]
+      },
+      "JobFailureTag": {
+        "type": "string",
+        "description": "Reason tag for a job failure or cancellation.",
+        "enum": [
+          "IGNORED",
+          "CLOGGED_NOZZLE",
+          "NON_ADHERENT_BED",
+          "UNDER_EXTRUSION",
+          "OVER_EXTRUSION",
+          "STRINGING_OR_OOZING",
+          "GAPS_IN_THIN_WALLS",
+          "OVERHEATING",
+          "LAYER_SHIFTING",
+          "SPAGHETTI_MONSTER",
+          "LAYER_SEPARATION",
+          "WARPING",
+          "POOR_BRIDGING",
+          "OTHER"
+        ]
+      },
+      "JobFailureReason": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobFailureTag"
+            }
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Free-text note when tag is OTHER."
+          }
+        }
+      },
+      "CancelableObject": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "description": "An object within a print that can be individually cancelled.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "polygon": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "canceled": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "description": "A print job in the history or queue for a printer.",
+        "required": [
+          "id",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "lifetime_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "printer_uuid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "origin_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_info": {
+            "$ref": "#/components/schemas/SourceInfo"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "cameras": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Camera"
+            }
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_printing": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total print time in seconds."
+          },
+          "start": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Job start time as Unix timestamp."
+          },
+          "end": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Job end time as Unix timestamp."
+          },
+          "progress": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "planned": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "print_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "file": {
+            "$ref": "#/components/schemas/File"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/JobFailureReason"
+          },
+          "cancelable_objects": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CancelableObject"
+            },
+            "description": "Also accessible as `cancelable.objects` in some response formats."
+          },
+          "cancelable_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "Storage": {
+        "type": "object",
+        "description": "A storage device available on the printer (e.g., USB, internal flash).",
+        "required": [
+          "type",
+          "path",
+          "name"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "mountpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean",
+            "default": false
+          },
+          "is_sfn": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "file_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "free_space": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Free space in bytes."
+          },
+          "total_space": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total space in bytes."
+          }
+        }
+      },
+      "PrintFileMeta": {
+        "type": "object",
+        "description": "Metadata extracted from G-code / BG-code slicer comments.",
+        "properties": {
+          "extruder_colour": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filament_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filament_cost": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_abrasive": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "temperature": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Nozzle temperature in °C."
+          },
+          "bed_temperature": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Bed temperature in °C."
+          },
+          "brim_width": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ironing": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "nozzle_high_flow": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "support_material": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "total_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "max_layer_z": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "layer_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "fill_density": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nozzle_diameter": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_used_m": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_used_mm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_used_g": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_used_cm3": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "filament_used_mm3": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "estimated_print_time": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Estimated print time in seconds."
+          },
+          "estimated_printing_time_normal_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "printer_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "producer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            }
+          },
+          "objects_info": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "FirmwareFileMeta": {
+        "type": "object",
+        "description": "Metadata associated with a firmware (.bbf) file.",
+        "properties": {
+          "device_type_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sem_ver": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "build_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "bbf_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "printer_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BaseFile": {
+        "type": "object",
+        "description": "Common fields shared by all file types.",
+        "required": [
+          "type",
+          "name"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Discriminator field. One of `FILE`, `PRINT_FILE`, `FIRMWARE`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "File size in bytes."
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "SHA256 hash of the file content."
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "upload_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "uploaded": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read_only": {
+            "type": "boolean",
+            "default": false
+          },
+          "m_timestamp": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Modification timestamp (Unix)."
+          },
+          "sync": {
+            "$ref": "#/components/schemas/SyncInfo"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/Owner"
+          }
+        }
+      },
+      "RegularFile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseFile"
+          }
+        ],
+        "description": "A generic non-print, non-firmware file.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "FILE"
+            ]
+          }
+        }
+      },
+      "PrintFile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseFile"
+          }
+        ],
+        "description": "A G-code or BG-code print file.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "PRINT_FILE"
+            ]
+          },
+          "preview_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "preview_mimetype": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PrintFileMeta"
+          }
+        }
+      },
+      "FirmwareFile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseFile"
+          }
+        ],
+        "description": "A firmware (.bbf) file.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "FIRMWARE"
+            ]
+          },
+          "printer_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/FirmwareFileMeta"
+          }
+        }
+      },
+      "File": {
+        "description": "A file in Prusa Connect storage. Discriminated by the `type` field.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PrintFile"
+          },
+          {
+            "$ref": "#/components/schemas/FirmwareFile"
+          },
+          {
+            "$ref": "#/components/schemas/RegularFile"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "PRINT_FILE": "#/components/schemas/PrintFile",
+            "FIRMWARE": "#/components/schemas/FirmwareFile",
+            "FILE": "#/components/schemas/RegularFile"
+          }
+        }
+      },
+      "UploadStatus": {
+        "type": "object",
+        "description": "Status of an in-progress or completed file upload.",
+        "required": [
+          "id",
+          "team_id",
+          "name",
+          "size",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "team_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "description": "File size in bytes."
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TeamUser": {
+        "type": "object",
+        "description": "A user that is a member of a team.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "first_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatar": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rights_ro": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Read-only rights."
+          },
+          "rights_rw": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Read-write rights."
+          },
+          "rights_use": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Usage rights (start/stop print)."
+          }
+        }
+      },
+      "Team": {
+        "type": "object",
+        "description": "A Prusa Connect team (workspace).",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capacity": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Maximum number of printers."
+          },
+          "organization_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "prusaconnect_api_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "users": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamUser"
+            }
+          },
+          "invitees": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {}
+          }
+        }
+      },
+      "AuthConfig": {
+        "type": "object",
+        "required": [
+          "backends",
+          "server_url",
+          "client_id",
+          "redirect_url"
+        ],
+        "properties": {
+          "backends": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRUSA_AUTH"
+              ]
+            },
+            "description": "List of supported authentication providers."
+          },
+          "server_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Base URL for the authentication server."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "OAuth2 Client ID."
+          },
+          "redirect_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "OAuth2 Redirect URL."
+          },
+          "avatar_server_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Base URL for retrieving user avatars."
+          },
+          "max_upload_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Maximum allowed file upload size in bytes."
+          },
+          "max_snapshot_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Maximum allowed camera snapshot size in bytes."
+          },
+          "max_preview_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Maximum allowed G-code preview size in bytes."
+          },
+          "afs_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the Automated Filament System (AFS) is enabled."
+          },
+          "afs_group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Group ID for AFS."
+          }
+        }
+      },
+      "AppConfig": {
+        "type": "object",
+        "required": [
+          "auth"
+        ],
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/AuthConfig"
+          }
+        }
+      },
+      "PrinterTypeParameters": {
+        "type": "object",
+        "description": "Hardware parameter ranges for a printer type.",
+        "properties": {
+          "extrusion": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "print_flow": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "print_speed": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "min_temp_nozzle_e": {
+            "type": "integer"
+          },
+          "temp_nozzle": {
+            "$ref": "#/components/schemas/Range"
+          },
+          "temp_bed": {
+            "$ref": "#/components/schemas/Range"
+          },
+          "feedrate_e": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "feedrate_x": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "feedrate_y": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "feedrate_z": {
+            "$ref": "#/components/schemas/RangeWithDefault"
+          },
+          "position_x": {
+            "$ref": "#/components/schemas/Range"
+          },
+          "position_y": {
+            "$ref": "#/components/schemas/Range"
+          },
+          "position_z": {
+            "$ref": "#/components/schemas/Range"
+          },
+          "mbl_positions": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "description": "Mesh Bed Leveling position grid."
+          }
+        }
+      },
+      "Range": {
+        "type": "object",
+        "properties": {
+          "max": {
+            "type": "number"
+          },
+          "min": {
+            "type": "number"
+          }
+        }
+      },
+      "RangeWithDefault": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Range"
+          }
+        ],
+        "properties": {
+          "default": {
+            "type": "number"
+          }
+        }
+      },
+      "PrinterType": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "subversion": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/PrinterTypeParameters"
+          },
+          "decision_maker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_filename": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fw_device_type_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "support": {
+            "type": "object",
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "unsupported": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "PrintingNotPrintingEntry": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "description": "Duration in seconds. SDK alias: `duration`."
+          }
+        }
+      },
+      "PrintingNotPrinting": {
+        "type": "object",
+        "description": "Printer usage statistics: time spent printing vs idle.",
+        "required": [
+          "from",
+          "to",
+          "name",
+          "uuid",
+          "data"
+        ],
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Range start as Unix timestamp."
+          },
+          "to": {
+            "type": "integer",
+            "description": "Range end as Unix timestamp."
+          },
+          "name": {
+            "type": "string",
+            "description": "Printer name. SDK alias: `printer_name`."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Printer UUID. SDK alias: `printer_uuid`."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrintingNotPrintingEntry"
+            }
+          }
+        }
+      },
+      "MaterialQuantity": {
+        "type": "object",
+        "description": "Printer usage statistics: material quantity consumed.",
+        "required": [
+          "from",
+          "to",
+          "name",
+          "uuid",
+          "data"
+        ],
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Range start as Unix timestamp."
+          },
+          "to": {
+            "type": "integer",
+            "description": "Range end as Unix timestamp."
+          },
+          "name": {
+            "type": "string",
+            "description": "Printer name. SDK alias: `printer_name`."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Printer UUID. SDK alias: `printer_uuid`."
+          },
+          "data": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      },
+      "PlannedTasksSeries": {
+        "type": "object",
+        "required": [
+          "uuid",
+          "name",
+          "data"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "SDK alias: `printer_uuid`."
+          },
+          "name": {
+            "type": "string",
+            "description": "SDK alias: `printer_name`."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "description": "Array of [timestamp, count] pairs."
+          }
+        }
+      },
+      "PlannedTasks": {
+        "type": "object",
+        "description": "Printer usage statistics: planned print tasks over time.",
+        "required": [
+          "from",
+          "to",
+          "xAxis",
+          "series"
+        ],
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Range start as Unix timestamp."
+          },
+          "to": {
+            "type": "integer",
+            "description": "Range end as Unix timestamp."
+          },
+          "xAxis": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Time axis as Unix timestamps. SDK alias: `time_axis`."
+          },
+          "series": {
+            "$ref": "#/components/schemas/PlannedTasksSeries"
+          }
+        }
+      },
+      "JobsSuccessSeries": {
+        "type": "object",
+        "required": [
+          "name",
+          "data"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Job status value (e.g., `FIN_OK`). SDK alias: `status`.",
+            "enum": [
+              "PRINTING",
+              "FINISHED",
+              "FIN_OK",
+              "FIN_STOPPED",
+              "FIN_ERROR",
+              "FIN_UNKNOWN"
+            ]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Count per date bucket."
+          }
+        }
+      },
+      "JobsSuccess": {
+        "type": "object",
+        "description": "Printer usage statistics: job success/failure counts over time.",
+        "required": [
+          "from",
+          "to",
+          "xAxis",
+          "name",
+          "uuid",
+          "series",
+          "time_shift"
+        ],
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Range start as Unix timestamp."
+          },
+          "to": {
+            "type": "integer",
+            "description": "Range end as Unix timestamp."
+          },
+          "xAxis": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Date labels for each bucket. SDK alias: `date_axis`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Printer name. SDK alias: `printer_name`."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Printer UUID. SDK alias: `printer_uuid`."
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobsSuccessSeries"
+            }
+          },
+          "time_shift": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Standard error response body returned for 4xx/5xx responses. `code` and `message` are always present. `reason` provides additional context for input/validation errors (e.g. invalid path parameters on a 400) but is absent for auth errors.",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable error code. Known values: `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `NOT_FOUND_CAMERA` (404), `NOT_FOUND_PRINTER` (404), `NOT_FOUND_TEAM` (404). Full enumeration is not documented.",
+            "example": "UNAUTHORIZED"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description of the error.",
+            "example": "Missing or invalid security token"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Additional context about what caused the error. Present for validation/input errors (e.g. `Invalid path parameter: printer_uuid`); absent for auth errors.",
+            "example": "Invalid path parameter: printer_uuid"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/o/authorize": {
+      "servers": [
+        {
+          "url": "https://account.prusa3d.com",
+          "description": "Prusa Account Identity Provider"
+        }
+      ],
+      "get": {
+        "operationId": "initiateAuthorization",
+        "summary": "Initiate OAuth2 Authorization",
+        "description": "Step 1 of the OAuth2 PKCE flow. Renders the Prusa Account login page as an HTML document and sets a `csrftoken` cookie. The server embeds the full percent-encoded authorization continuation URL in a hidden `next` field within the login form. The `csrftoken` cookie value must be forwarded as `csrfmiddlewaretoken` and the `next` value must be forwarded verbatim to `POST /login`.",
+        "security": [],
+        "tags": ["Auth"],
+        "parameters": [
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": true,
+            "description": "OAuth2 response type. Must be `code` for the authorization code flow.",
+            "schema": {
+              "type": "string",
+              "enum": ["code"]
+            }
+          },
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "description": "The OAuth2 client ID for Prusa Connect.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4"
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": true,
+            "description": "The registered callback URI. Must exactly match the registered value.",
+            "schema": {
+              "type": "string",
+              "enum": ["https://connect.prusa3d.com/login/auth-callback"]
+            }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "required": true,
+            "description": "PKCE challenge method. Only `S256` (SHA-256) is accepted.",
+            "schema": {
+              "type": "string",
+              "enum": ["S256"]
+            }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "required": true,
+            "description": "Base64url-encoded SHA-256 hash of the PKCE `code_verifier`. Must be generated fresh for each authorization request.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "-KfhcQVIeAp3Hy1yXxq0jRQxKgYzpzSOTGzBSK8j81"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML login form. Sets a `csrftoken` cookie required as `csrfmiddlewaretoken` in the credential submission. The form (`id=\"recaptcha_form\"`) contains hidden fields `csrfmiddlewaretoken` and `next` carrying the percent-encoded `/o/authorize/` continuation URL through the login chain.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Sets the `csrftoken` cookie used for CSRF protection on subsequent form submissions to `/login` and `/login/totp`.",
+                "schema": {
+                  "type": "string",
+                  "example": "csrftoken=RsGaG6vlFBSlmaM9KNvNylBDUxA7I8zF; Path=/; SameSite=Lax"
+                }
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "description": "HTML document containing a login form with hidden fields `csrfmiddlewaretoken` and `next` (the percent-encoded `/o/authorize/` URL to resume after authentication)."
+                }
+              }
+            },
+            "links": {
+              "SubmitCredentials": {
+                "operationId": "submitCredentials",
+                "description": "Pass the `csrftoken` cookie value as `csrfmiddlewaretoken` and the embedded `next` form-field value to `POST /login` to continue the flow."
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "operationId": "submitCredentials",
+        "summary": "Submit User Credentials",
+        "description": "Step 2 of the OAuth2 PKCE flow. Submits the user's email and password as a form POST together with the CSRF token from `GET /o/authorize` and the `next` continuation URL. On success without MFA the server issues a `302` redirect to `redirect_uri?code=...`. If the account has TOTP enabled the redirect targets `/login/totp/` instead.",
+        "security": [],
+        "tags": ["Auth"],
+        "servers": [
+          {
+            "url": "https://account.prusa3d.com",
+            "description": "Prusa Account Identity Provider"
+          }
+        ],
+        "parameters": [
+          {
+            "name": "next",
+            "in": "query",
+            "required": true,
+            "description": "Percent-encoded `/o/authorize/` URL including all PKCE parameters. Preserved verbatim through every redirect in the login chain.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "/o/authorize/?response_type=code&client_id=MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4&redirect_uri=https%3A%2F%2Fconnect.prusa3d.com%2Flogin%2Fauth-callback&code_challenge_method=S256&code_challenge=LupMrl9-u2zbT3ltQAZv6dGFEsokCe2L7dIh2O0R6qg"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Form-encoded credentials and CSRF token. `csrfmiddlewaretoken` is the value of the `csrftoken` cookie set by `GET /o/authorize`. `next` mirrors the query parameter and is used by the server to reconstruct the redirect chain.",
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["csrfmiddlewaretoken", "next", "email", "password"],
+                "properties": {
+                  "csrfmiddlewaretoken": {
+                    "type": "string",
+                    "description": "CSRF token value from the `csrftoken` cookie set by `GET /o/authorize`."
+                  },
+                  "next": {
+                    "type": "string",
+                    "description": "The percent-encoded `/o/authorize/` URL forwarded from the login form's hidden `next` field."
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "The user's Prusa Account email address."
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "The user's Prusa Account password."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "302": {
+            "description": "Redirect on successful credential verification. Without MFA the `Location` header is `{redirect_uri}?code={authorization_code}`. With TOTP MFA enabled the `Location` header is `https://account.prusa3d.com/login/totp/?next={encoded_authorize_url}`.",
+            "headers": {
+              "Location": {
+                "description": "Redirect destination. Either the `redirect_uri` with an authorization `code` parameter (no MFA), or the TOTP endpoint with the `next` parameter (MFA required).",
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "no-mfa": {
+                    "summary": "Authorization code issued directly (no MFA)",
+                    "value": "https://connect.prusa3d.com/login/auth-callback?code=YWAV9pnaSuxc6CxA27PdSEWa7Ld2P"
+                  },
+                  "mfa-required": {
+                    "summary": "TOTP step required",
+                    "value": "https://account.prusa3d.com/login/totp/?next=/o/authorize/%3Fresponse_type%3Dcode%26client_id%3DMRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4%26..."
+                  }
+                }
+              }
+            },
+            "links": {
+              "SubmitTotp": {
+                "operationId": "submitTotp",
+                "description": "When MFA is required, follow the redirect to `POST /login/totp` supplying the same CSRF token, the forwarded `next` value, and the 6-digit OTP code."
+              },
+              "ExchangeAuthorizationCode": {
+                "operationId": "exchangeToken",
+                "description": "When MFA is not required, extract the `code` query parameter from the `Location` redirect URL and exchange it for tokens at `POST /o/token/`.",
+                "parameters": {
+                  "code": "$response.header.Location"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Login page re-rendered with a validation error (invalid credentials or reCAPTCHA failure).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login/totp": {
+      "post": {
+        "operationId": "submitTotp",
+        "summary": "Submit TOTP MFA Code",
+        "description": "Step 3 of the OAuth2 PKCE flow — conditional, only required when the account has TOTP MFA enabled. Submits the 6-digit one-time password together with the CSRF token and forwarded `next` URL. On success the server redirects to `redirect_uri?code=...` containing the authorization code.",
+        "security": [],
+        "tags": ["Auth"],
+        "servers": [
+          {
+            "url": "https://account.prusa3d.com",
+            "description": "Prusa Account Identity Provider"
+          }
+        ],
+        "parameters": [
+          {
+            "name": "next",
+            "in": "query",
+            "required": true,
+            "description": "Percent-encoded `/o/authorize/` URL forwarded from the `/login` redirect `Location` header. Must be preserved exactly.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "/o/authorize/?response_type=code&client_id=MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4&redirect_uri=https%3A%2F%2Fconnect.prusa3d.com%2Flogin%2Fauth-callback&code_challenge_method=S256&code_challenge=LupMrl9-u2zbT3ltQAZv6dGFEsokCe2L7dIh2O0R6qg"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Form-encoded TOTP submission. `csrfmiddlewaretoken` must match the `csrftoken` cookie from the originating `GET /o/authorize` response.",
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["csrfmiddlewaretoken", "next", "otp_token"],
+                "properties": {
+                  "csrfmiddlewaretoken": {
+                    "type": "string",
+                    "description": "CSRF token value matching the `csrftoken` cookie from `GET /o/authorize`."
+                  },
+                  "next": {
+                    "type": "string",
+                    "description": "The percent-encoded `/o/authorize/` URL forwarded from the `/login` redirect."
+                  },
+                  "otp_token": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$",
+                    "description": "6-digit TOTP code from the user's authenticator app.",
+                    "example": "012467"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "302": {
+            "description": "Redirect to `{redirect_uri}?code={authorization_code}` on successful OTP verification.",
+            "headers": {
+              "Location": {
+                "description": "The registered `redirect_uri` with the short-lived authorization `code` appended as a query parameter. Extract this `code` and pass it to `POST /o/token/`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "https://connect.prusa3d.com/login/auth-callback?code=YWAV9pnaSuxc6CxA27PdSEWa7Ld2P"
+              }
+            },
+            "links": {
+              "ExchangeAuthorizationCode": {
+                "operationId": "exchangeToken",
+                "description": "Extract the `code` query parameter from the `Location` redirect URL and exchange it for tokens at `POST /o/token/`.",
+                "parameters": {
+                  "code": "$response.header.Location"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "TOTP form re-rendered with a validation error (invalid or expired OTP code).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/o/token/": {
+      "post": {
+        "operationId": "exchangeToken",
+        "summary": "Exchange Authorization Code for Tokens",
+        "description": "Step 4 of the OAuth2 PKCE flow. Exchanges the short-lived authorization `code` (extracted from the `redirect_uri` callback query parameter) for a JWT access token, JWT refresh token, and OIDC ID token. The `code_verifier` must correspond to the `code_challenge` submitted in `GET /o/authorize` (RFC 7636). Access tokens are valid for 7200 seconds; refresh tokens are valid for approximately 30 days.",
+        "security": [],
+        "tags": ["Auth"],
+        "servers": [
+          {
+            "url": "https://account.prusa3d.com",
+            "description": "Prusa Account Identity Provider"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Standard OAuth2 authorization code token request (RFC 6749 §4.1.3) with PKCE `code_verifier` extension (RFC 7636 §4.5).",
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["grant_type", "client_id", "code", "code_verifier", "redirect_uri"],
+                "properties": {
+                  "grant_type": {
+                    "type": "string",
+                    "enum": ["authorization_code"],
+                    "description": "Must be `authorization_code`."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "description": "The OAuth2 client ID for Prusa Connect.",
+                    "example": "MRHTlZhZqkNrrQ6FUPtjyusAz8nc59ErHXP8XkS4"
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "The authorization code extracted from the `code` query parameter of the `redirect_uri` callback.",
+                    "example": "ou6xxSTbr99XO0GOWfnvtFMDz1WEgY"
+                  },
+                  "code_verifier": {
+                    "type": "string",
+                    "description": "The original PKCE code verifier (high-entropy random string) whose SHA-256 hash was sent as `code_challenge` in `GET /o/authorize`.",
+                    "example": "MLeh9nWAw-c_juZoNOyFvmArmZv9GnmSrRRVFx7bU2A"
+                  },
+                  "redirect_uri": {
+                    "type": "string",
+                    "description": "Must exactly match the `redirect_uri` used in `GET /o/authorize`.",
+                    "enum": ["https://connect.prusa3d.com/login/auth-callback"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token response containing a Bearer access token, refresh token, and OIDC ID token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["access_token", "expires_in", "token_type", "scope", "refresh_token", "shared_session_key", "id_token"],
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "description": "RS256-signed JWT Bearer token. Pass as `Authorization: Bearer <token>` on all authenticated Prusa Connect API calls. Decoded claims: `jti` (token ID), `sub` (account numeric ID string), `exp` (expiry epoch float), `sid` (session UUID), `app` (always `\"connect\"`), `type` (always `\"access\"`), `connect_id` (Connect-specific user ID string)."
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "description": "Access token lifetime in seconds.",
+                      "example": 7200
+                    },
+                    "token_type": {
+                      "type": "string",
+                      "enum": ["Bearer"],
+                      "description": "Token type. Always `Bearer`."
+                    },
+                    "scope": {
+                      "type": "string",
+                      "description": "Space-separated list of granted OAuth2 scopes.",
+                      "example": "basic_info connect user_operations email_lists openid"
+                    },
+                    "refresh_token": {
+                      "type": "string",
+                      "description": "RS256-signed JWT refresh token used to obtain a new access token without re-authentication. Valid for approximately 30 days. Decoded claims: `jti`, `sub`, `exp`, `sid`, `app`, `type` (always `\"refresh\"`)."
+                    },
+                    "shared_session_key": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Session UUID shared across all tokens issued in this authorization session. Corresponds to the `sid` claim in both the access and refresh tokens.",
+                      "example": "8144bf06-4ef4-42e0-9c99-cada1948415b"
+                    },
+                    "id_token": {
+                      "type": "string",
+                      "description": "RS256-signed OIDC ID token (JWT). Standard claims: `jti`, `sub` (account ID), `exp`, `aud` (client_id), `iss` (`https://account.prusa3d.com`). Extended `user` claim contains full profile: `id`, `email`, `language`, `first_name`, `last_name`, `public_username`, `avatar` (relative path), `avatar_small` / `avatar_large` (absolute media URLs), `external_service_ids` (`id_verse`, `id_academy`, `id_connect`, `id_shopsy`, `id_knowledgebase`), `otp_enabled`, `is_employee`, `is_staff`, `providers` (e.g. `[\"GOOGLE\"]`), `department`, `custom_data`."
+                    }
+                  }
+                }
+              }
+            },
+            "links": {
+              "UseAccessToken": {
+                "operationRef": "#/paths/~1app~1printers/get",
+                "description": "Pass the `access_token` value as `Authorization: Bearer <token>` on all authenticated Prusa Connect API endpoints (see `BearerAuth` security scheme). The token is valid for `expires_in` seconds; use `refresh_token` to obtain a new access token when it expires."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid token request — malformed parameters, expired or already-used authorization code, or `code_verifier`/`code_challenge` mismatch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "OAuth2 error code (e.g. `invalid_grant`, `invalid_client`, `invalid_request`).",
+                      "example": "invalid_grant"
+                    },
+                    "error_description": {
+                      "type": "string",
+                      "description": "Human-readable description of the error.",
+                      "example": "Code has expired."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version.json": {
+      "get": {
+        "summary": "Get API version",
+        "description": "Returns the current platform version. Does not require authentication.",
+        "operationId": "getVersion",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "commit": {
+                      "type": "string",
+                      "description": "8-character commitish string."
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Version string (currently same as commit)."
+                    },
+                    "date": {
+                      "type": "string",
+                      "description": "ISO format UTC timestamp when this version was committed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Platform"
+        ]
+      }
+    },
+    "/app/config": {
+      "get": {
+        "summary": "Get application configuration",
+        "description": "Returns public application configuration including OAuth2 parameters, upload limits, and feature flags. Does not require authentication.",
+        "operationId": "getAppConfig",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfig"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Platform"
+        ]
+      }
+    },
+    "/app/printer-types": {
+      "get": {
+        "summary": "Get printer types",
+        "description": "Returns all known printer type definitions with hardware parameter ranges. Does not require authentication.",
+        "operationId": "getPrinterTypes",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "printer_types": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PrinterType"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Platform"
+        ]
+      }
+    },
+    "/app/printers": {
+      "get": {
+        "summary": "List printers",
+        "description": "Returns all printers accessible to the authenticated user. Pass `team_id` to filter to a specific team.",
+        "operationId": "listPrinters",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          },
+          {
+            "name": "team_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter printers by team ID.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK. May return either a wrapped object `{\"printers\": [...]}` or a bare array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "printers": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Printer"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Printer"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/groups": {
+      "get": {
+        "summary": "Get printer groups",
+        "description": "Returns printer groupings. Schema of individual group items is not yet fully documented.",
+        "operationId": "getPrinterGroups",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "pager": {
+                      "$ref": "#/components/schemas/Pager"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/{uuid}": {
+      "get": {
+        "summary": "Get printer details",
+        "description": "Returns full details for a single printer by UUID.",
+        "operationId": "getPrinter",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Printer"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/commands": {
+      "get": {
+        "summary": "Get supported commands",
+        "description": "Returns the list of commands supported by the printer. Used to determine printer capabilities before sending commands. The SDK requires `STOP_PRINT` to be present and raises `PrusaCompatibilityError` if missing.",
+        "operationId": "getPrinterCommands",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK. May return a wrapped object or a bare array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "commands": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CommandDefinition"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CommandDefinition"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/commands/sync": {
+      "post": {
+        "summary": "Execute printer command",
+        "description": "Sends a synchronous command to the printer. The command must be listed in the printer's supported commands. Known commands (no additional args): `SET_PRINTER_READY`, `CANCEL_PRINTER_READY`, `PAUSE_PRINT`, `RESUME_PRINT`, `STOP_PRINT`, `RESET_PRINTER`, `UNLOAD_FILAMENT`, `SEND_INFO`, `STOP_TRANSFER`, `SEND_STATE_INFO`, `RESET`, `DISABLE_STEPPERS`, `BEEP`.",
+        "operationId": "executePrinterCommand",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "The command name to execute (e.g., `PAUSE_PRINT`)."
+                  },
+                  "kwargs": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "description": "Optional named arguments for commands that accept parameters."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Command accepted."
+          },
+          "204": {
+            "description": "Command accepted, no content returned."
+          },
+          "400": {
+            "description": "Bad request — invalid command or arguments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/files": {
+      "get": {
+        "summary": "List printer files",
+        "description": "Returns files stored on the printer's local storage.",
+        "operationId": "listPrinterFiles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/File"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/File"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/storages": {
+      "get": {
+        "summary": "Get printer storage devices",
+        "description": "Returns storage devices (USB, internal flash, etc.) attached to the printer.",
+        "operationId": "getPrinterStorages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "storages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Storage"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Storage"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Printers"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/jobs": {
+      "get": {
+        "summary": "List printer job history",
+        "description": "Returns the job history for a specific printer.",
+        "operationId": "listPrinterJobs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/jobs/{job_id}": {
+      "get": {
+        "summary": "Get job details",
+        "description": "Returns details for a specific job on a printer.",
+        "operationId": "getPrinterJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "The numeric ID of the job.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer or job not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ]
+      },
+      "patch": {
+        "summary": "Update job (set failure reason)",
+        "description": "Updates a job record. Currently used to attach a failure reason to a finished/failed job.",
+        "operationId": "patchPrinterJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "The numeric ID of the job.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "$ref": "#/components/schemas/JobFailureReason"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated."
+          },
+          "204": {
+            "description": "Updated, no content."
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer or job not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ]
+      }
+    },
+    "/app/printers/{uuid}/queue": {
+      "get": {
+        "summary": "Get print queue",
+        "description": "Returns the planned/queued jobs for a printer. Response shape varies — may use `planned_jobs`, `jobs`, or `queue` as the key.",
+        "operationId": "getPrinterQueue",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK. Key name for the array varies across firmware versions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "planned_jobs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Job"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "jobs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Job"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "queue": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Job"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Jobs"
+        ]
+      }
+    },
+    "/app/users/teams": {
+      "get": {
+        "summary": "List teams",
+        "description": "Returns all teams accessible to the authenticated user.",
+        "operationId": "listTeams",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "teams": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Team"
+                      }
+                    },
+                    "pager": {
+                      "$ref": "#/components/schemas/Pager"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/app/users/teams/{team_id}": {
+      "get": {
+        "summary": "Get team details",
+        "description": "Returns full details for a team, including its members (`users`) and invitees.",
+        "operationId": "getTeam",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Team not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/app/teams/{team_id}/add-user": {
+      "post": {
+        "summary": "Invite user to team",
+        "description": "Invites a user (by email) to join a team with specified permissions.",
+        "operationId": "addTeamUser",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "rights_ro": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Grant read-only rights."
+                  },
+                  "rights_use": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Grant usage rights (start/stop print)."
+                  },
+                  "rights_rw": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Grant read-write rights."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User invited successfully."
+          },
+          "204": {
+            "description": "User invited, no content returned."
+          },
+          "400": {
+            "description": "Bad request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Team not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/app/teams/{team_id}/files": {
+      "get": {
+        "summary": "List team files",
+        "description": "Returns all files stored in the team's Connect storage.",
+        "operationId": "listTeamFiles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/File"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Team not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/app/teams/{team_id}/files/{file_hash}": {
+      "get": {
+        "summary": "Get team file details",
+        "description": "Returns metadata for a specific file in team storage, identified by its hash.",
+        "operationId": "getTeamFile",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "description": "SHA256 hash (or identifier) of the file.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/File"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/app/teams/{team_id}/files/{file_hash}/raw": {
+      "get": {
+        "summary": "Download team file",
+        "description": "Downloads the raw binary content of a file from team storage.",
+        "operationId": "downloadTeamFile",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "description": "SHA256 hash (or identifier) of the file.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — binary file content.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/app/users/teams/{team_id}/uploads": {
+      "post": {
+        "summary": "Initiate file upload",
+        "description": "Creates an upload session and returns an `upload_id`. Follow up with `PUT /app/teams/{team_id}/files/raw?upload_id={id}` to send the binary data.",
+        "operationId": "initiateTeamUpload",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "destination",
+                  "filename",
+                  "size"
+                ],
+                "properties": {
+                  "destination": {
+                    "type": "string",
+                    "description": "Target folder path in Connect storage (e.g., `connect/My Projects`)."
+                  },
+                  "filename": {
+                    "type": "string",
+                    "description": "The name of the file to create."
+                  },
+                  "size": {
+                    "type": "integer",
+                    "description": "File size in bytes."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload session created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Team not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/app/teams/{team_id}/files/raw": {
+      "put": {
+        "summary": "Upload file data",
+        "description": "Uploads the binary content of a file for a previously initiated upload session. Must call `POST /app/users/teams/{team_id}/uploads` first to obtain `upload_id`.",
+        "operationId": "uploadTeamFileData",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TeamIdParam"
+          },
+          {
+            "name": "upload_id",
+            "in": "query",
+            "required": true,
+            "description": "The upload session ID returned by the initiate upload endpoint.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "parameters_note": "Additionally requires headers: `Content-Type` (e.g., `application/x-bgcode`) and `Upload-Size` (file size in bytes).",
+        "responses": {
+          "200": {
+            "description": "Upload accepted."
+          },
+          "204": {
+            "description": "Upload complete, no content returned."
+          },
+          "400": {
+            "description": "Bad request — missing or invalid upload ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Files"
+        ]
+      }
+    },
+    "/app/cameras": {
+      "get": {
+        "summary": "List cameras",
+        "description": "Returns all cameras accessible to the authenticated user.",
+        "operationId": "listCameras",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "cameras": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Camera"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Camera"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Cameras"
+        ]
+      }
+    },
+    "/app/cameras/{camera_id}/snapshots/last": {
+      "get": {
+        "summary": "Get latest camera snapshot",
+        "description": "Returns the most recent snapshot image for a camera, identified by its numeric ID.",
+        "operationId": "getLastCameraSnapshot",
+        "parameters": [
+          {
+            "name": "camera_id",
+            "in": "path",
+            "required": true,
+            "description": "Numeric camera ID (the `id` field on the Camera object).",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — raw image bytes.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Camera not found or no snapshot available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Cameras"
+        ]
+      }
+    },
+    "/app/cameras/{camera_token}/snapshots": {
+      "post": {
+        "summary": "Trigger camera snapshot",
+        "description": "Instructs the camera to capture a new snapshot. Uses the alphanumeric `token` field from the Camera object.",
+        "operationId": "triggerCameraSnapshot",
+        "parameters": [
+          {
+            "name": "camera_token",
+            "in": "path",
+            "required": true,
+            "description": "Alphanumeric camera token (the `token` field on the Camera object).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot triggered."
+          },
+          "204": {
+            "description": "Snapshot triggered, no content."
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Camera not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Cameras"
+        ]
+      }
+    },
+    "/app/notifications": {
+      "get": {
+        "summary": "Get notifications",
+        "description": "Returns notifications for the authenticated user.",
+        "operationId": "getNotifications",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notifications": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string"
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "hash": {
+                                "type": "string"
+                              },
+                              "job_id": {
+                                "type": "integer"
+                              },
+                              "job_name": {
+                                "type": "string"
+                              },
+                              "job_state": {
+                                "type": "string"
+                              },
+                              "preview_url": {
+                                "type": "string"
+                              },
+                              "printer_name": {
+                                "type": "string"
+                              },
+                              "printer_uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                              }
+                            }
+                          },
+                          "created": {
+                            "type": "integer",
+                            "description": "Unix timestamp."
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "seen": {
+                            "type": "integer",
+                            "description": "Unix timestamp when seen, or 0 if unseen."
+                          }
+                        }
+                      }
+                    },
+                    "pager": {
+                      "$ref": "#/components/schemas/Pager"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/app/stats/printers/{uuid}/printing_not_printing": {
+      "get": {
+        "summary": "Get printer usage stats",
+        "description": "Returns time-based statistics on how long the printer spent printing vs idle over a date range.",
+        "operationId": "getPrinterUsageStats",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintingNotPrinting"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Statistics"
+        ]
+      }
+    },
+    "/app/stats/printers/{uuid}/material_quantity": {
+      "get": {
+        "summary": "Get material quantity stats",
+        "description": "Returns statistics on the amount of material consumed by the printer over a date range.",
+        "operationId": "getPrinterMaterialStats",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialQuantity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Statistics"
+        ]
+      }
+    },
+    "/app/stats/printers/{uuid}/planned_tasks": {
+      "get": {
+        "summary": "Get planned tasks stats",
+        "description": "Returns time-series data of planned print tasks for the printer over a date range.",
+        "operationId": "getPrinterPlannedTasksStats",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedTasks"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Statistics"
+        ]
+      }
+    },
+    "/app/stats/printers/{uuid}/jobs_success": {
+      "get": {
+        "summary": "Get job success stats",
+        "description": "Returns historical job success/failure counts bucketed by date for the printer.",
+        "operationId": "getPrinterJobsSuccessStats",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PrinterUuidParam"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End of date range as Unix timestamp (seconds).",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsSuccess"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid Bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Printer not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Statistics"
+        ]
+      }
+    }
+  }
+}
