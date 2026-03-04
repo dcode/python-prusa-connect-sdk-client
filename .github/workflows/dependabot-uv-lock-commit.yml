@@ -28,7 +28,7 @@ jobs:
       # overwriting the existing uv.lock with the freshly-generated one.
       # Push target is passed via env to avoid shell-injection from branch names.
       - name: Download uv.lock artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: uv-lock
           run-id: ${{ github.event.workflow_run.id }}
