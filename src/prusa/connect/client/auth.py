@@ -248,7 +248,8 @@ class PrusaConnectCredentials:
         if resp.status_code == 200:
             new_data = resp.json()
             # We need to update our PrusaJWTTokenSet.
-            # The refresh response typically contains a new access_token and optionally a new refresh_token.
+            # The refresh response typically contains a new access_token
+            # and optionally a new refresh_token.
 
             # Use dump_tokens() to get current state as dict of raw strings
             current_raw = self.tokens.dump_tokens()
@@ -392,11 +393,15 @@ def interactive_login(email: str, password: str, otp_callback: collections.abc.C
     }
 
     logger.info("Initiating login flow...")
-    logger.debug("Login params", url=consts.AUTH_URL, params=params)
+    # logger.debug("Initial login request", method="GET", params=params,
+    # url=consts.AUTH_URL)
     resp = session.get(consts.AUTH_URL, params=params)
+    # logger.debug("Initial login flow reponse", status_code=resp.status_code,
+    # text=resp.text, headers=resp.headers)
     if resp.status_code != 200:
         raise exceptions.PrusaAuthError(f"Could not load login page (Status: {resp.status_code})")
 
+    # csrf could optionally be extracted from set-cookie header
     csrf = _extract_csrf(resp.text)
     if not csrf:
         logger.error("CSRF token missing from login page")
@@ -411,7 +416,11 @@ def interactive_login(email: str, password: str, otp_callback: collections.abc.C
     }
 
     headers = {"Referer": resp.url, "Origin": "https://account.prusa3d.com"}
+    # logger.debug("Submit user credentialls", method="POST", data=payload,
+    # headers=headers, url=resp.url)
     resp = session.post(resp.url, data=payload, headers=headers)
+    # logger.debug("Creds response", status_code=resp.status_code,
+    # url=resp.url, body=resp.text, headers=resp.headers)
 
     # 4. Check for errors or TOTP
     if 'class="invalid-feedback"' in resp.text:
@@ -420,6 +429,8 @@ def interactive_login(email: str, password: str, otp_callback: collections.abc.C
     if "/login/totp/" in resp.url:
         logger.info("2FA Challenge detected.")
         resp = _handle_totp(session, resp, otp_callback)
+        # logger.debug("TOTP Response", status_code=resp.status_code, url=resp.url,
+        #  body=resp.text, headers=resp.headers)
 
     # 5. Handle Callback
     parsed = urllib.parse.urlparse(resp.url)
@@ -431,24 +442,28 @@ def interactive_login(email: str, password: str, otp_callback: collections.abc.C
         raise exceptions.PrusaAuthError("Login failed: No authorization code in callback.")
 
     auth_code = query["code"][0]
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": consts.CLIENT_ID,
+        "code": auth_code,
+        "code_verifier": verifier,
+        "redirect_uri": consts.REDIRECT_URI,
+    }
 
     # 6. Exchange Code
+    # logger.debug("Submit authorization for user token", method="POST",
+    # data=payload, url=consts.TOKEN_URL)
     token_resp = session.post(
         consts.TOKEN_URL,
-        data={
-            "grant_type": "authorization_code",
-            "client_id": consts.CLIENT_ID,
-            "code": auth_code,
-            "code_verifier": verifier,
-            "redirect_uri": consts.REDIRECT_URI,
-        },
+        data=payload,
     )
 
     if token_resp.status_code != 200:
         raise exceptions.PrusaAuthError(f"Token exchange failed: {token_resp.text}")
 
     logger.info("Token exchange successful.", user_id=token_resp.json().get("sub"))
-    logger.debug("Token response", json=token_resp.json())
+    # logger.debug("Token response", status_code=token_resp.status_code,
+    # json=token_resp.json(), headers=token_resp.headers)
 
     return PrusaJWTTokenSet(**token_resp.json())
 
@@ -470,6 +485,8 @@ def _handle_totp(
         field_name: otp_code,
     }
 
+    # logger.debug("Handling TOTP", method="POST", data=payload,
+    # url=resp.url, referer=resp.url)
     return session.post(resp.url, data=payload, headers={"Referer": resp.url})
 
 

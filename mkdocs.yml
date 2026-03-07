@@ -19,6 +19,7 @@ markdown_extensions:
   - attr_list
   - codehilite
   - markdown_gfm_admonition
+  - pymdownx.details
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -39,6 +40,8 @@ plugins:
       exclude:
       - index.md
   - cyclopts
+  - neoteroi.mkdocsoad:
+      use_pymdownx: true
   - mkdocstrings:
       handlers:
         python:
@@ -61,6 +64,7 @@ exclude_docs: |
   development_notes/
 extra_css:
   - css/extra.css
+  - css/mkdocsoad.css
   - css/mkdocstrings.css
 extra:
   analytics:
@@ -88,6 +92,7 @@ nav:
           - Auth: api/auth.md
           - Client: api/client.md
           - Models: api/models.md
+          - OpenAPI Reference: api/openapi-reference.md
   - Development Resources:
     - Contributing: CONTRIBUTING.md
     - Architecture Notes: internal_architecture.md
