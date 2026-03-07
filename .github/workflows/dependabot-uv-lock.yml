@@ -23,7 +23,7 @@ jobs:
       - name: Update the lockfile
         run: uv lock
       - name: Upload uv.lock
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: uv-lock
           path: uv.lock
