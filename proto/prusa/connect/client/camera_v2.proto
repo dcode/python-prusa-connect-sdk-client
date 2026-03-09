@@ -143,3 +143,38 @@ message CameraToServer {
   NetworkInfo network = 4;
   string camera_token = 8;
 }
+
+// --- WebRTC Signaling ---
+
+message WebRTCServer {
+  repeated string urls = 1;
+  string username = 2;
+  string credential = 3;
+}
+
+message WebRTCConfig {
+  repeated WebRTCServer servers = 1;
+}
+
+message WebRTCData {
+  string sdp = 1;
+  string sdp_mid = 2;
+}
+
+message WebRTCSignaling {
+  string camera_token = 1;
+  string session_id = 2;
+  string peer_id = 3;
+  WebRTCData data = 4;
+
+  enum SignalingType {
+    UNKNOWN = 0;
+    CONFIG = 1;
+    ANSWER = 2;
+    OFFER = 3;
+    CANDIDATE = 4;
+  }
+  SignalingType type = 5;
+  uint32 direction = 7;
+  WebRTCConfig config = 8;
+}
