@@ -11,7 +11,6 @@ wheels/
 
 # Local Development & Secrets
 prusa_tokens.json
-/data/
 .idea/
 .vscode/
 .coverage
