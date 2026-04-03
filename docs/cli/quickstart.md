@@ -78,6 +78,7 @@ prusactl team show          # Show default team details
 # Cameras
 prusactl camera list
 prusactl camera snapshot <camera-id> --output snapshot.jpg
+prusactl camera webrtc <camera-id>  # Open a live WebRTC stream in your browser
 prusactl camera show <camera-id>
 ```
 

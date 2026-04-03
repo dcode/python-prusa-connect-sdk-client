@@ -66,10 +66,6 @@ name = "pypi"
 url = "https://pypi.org/simple"
 default = true
 
-[tool.uv.sources]
-# Temporary workaround until PR #63 upstream is merged and released
-essentials-openapi = { git = "https://github.com/dcode/essentials-openapi", branch = "main" }
-
 [build-system]
 requires = ["hatchling", "hatch-protobuf", "mypy-protobuf"]
 build-backend = "hatchling.build"
@@ -93,6 +89,7 @@ dev = [
 ]
 docs = [
     "cyclopts[mkdocs]>=4.5.1",
+    "essentials-openapi>=1.4.0",
     "hatch-mkdocs>=0.1.0",
     "markdown-callouts>=0.4.0",
     "markdown-gfm-admonition>=0.3.0",
@@ -104,7 +101,6 @@ docs = [
     "mkdocs-material[imaging,recommended]>=9.7.1",
     "mkdocstrings[python]>=1.0.3",
     "neoteroi-mkdocs>=1.2.0",
-    "essentials-openapi @ git+https://github.com/dcode/essentials-openapi@main",
     "pymdown-extensions>=10.20.1",
 ]
 
@@ -113,6 +109,9 @@ path = "src/prusa/connect/client/__version__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/prusa"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"proto/prusa/connect/client" = "prusa/connect/client/proto"
 
 [tool.hatch.envs.default]
 installer = "uv"

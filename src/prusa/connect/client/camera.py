@@ -61,9 +61,7 @@ class PrusaCameraClient:
         self.sio.on("status", self._on_status)
         self.sio.on("features", self._on_features)
         self.sio.on("client_trigger", self._on_client_trigger)
-        self.sio.on("webrtc_offer", self._on_webrtc_offer)
-        self.sio.on("webrtc_answer", self._on_webrtc_answer)
-        self.sio.on("webrtc_ice_candidate", self._on_webrtc_ice_candidate)
+        self.sio.on("webrtc", self._on_webrtc)
 
     def connect(self, wait: bool = False):
         """Connects to the signaling server."""
@@ -131,17 +129,55 @@ class PrusaCameraClient:
         # This can be used for timelapse progress etc.
         logger.debug("Client trigger received")
 
-    def _on_webrtc_offer(self, data: typing.Any):
-        """Callback for receiving a WebRTC offer."""
-        logger.info("WebRTC offer received")
+    def _on_webrtc(self, data: typing.Any):
+        """Callback for receiving WebRTC signaling messages."""
+        if isinstance(data, dict) and "_placeholder" in data:
+            return  # socket.io might send placeholder dicts before the binary payload
 
-    def _on_webrtc_answer(self, data: typing.Any):
-        """Callback for receiving a WebRTC answer."""
-        logger.info("WebRTC answer received")
+        signaling = pb.WebRTCSignaling()
+        try:
+            signaling.ParseFromString(data)
+        except Exception:
+            logger.exception("Failed to parse WebRTC signaling message")
+            return
 
-    def _on_webrtc_ice_candidate(self, data: typing.Any):
-        """Callback for receiving a WebRTC ICE candidate."""
-        logger.info("WebRTC ICE candidate received")
+        logger.info(
+            "WebRTC signaling received",
+            type=pb.WebRTCSignaling.SignalingType.Name(signaling.type),
+            direction=signaling.direction
+        )
+        # Developers map their application logic to handle SDPOffer, SDPAnswer, etc.
+
+    def webrtc_send(
+        self,
+        signaling_type: int,
+        sdp: str = "",
+        sdp_mid: str = "",
+        session_id: str = "",
+        peer_id: str = "",
+    ):
+        """Sends a WebRTC signaling message to the server.
+
+        Args:
+            signaling_type: WebRTCSignaling.SignalingType enum (OFFER=2, etc.)
+            sdp: The Session Description Protocol string or ICE candidate
+            sdp_mid: The media stream ID for candidates
+            session_id: The session ID for the signaling (often matches camera token or established session)
+            peer_id: The peer ID for the signaling (often matches the camera token)
+        """
+        msg = pb.WebRTCSignaling(
+            camera_token=self.camera_token,
+            session_id=session_id or getattr(self.sio, "sid", "") or self.camera_token,
+            peer_id=peer_id or self.camera_token,
+            direction=2,  # Client to Server
+        )
+        msg.type = signaling_type  # type: ignore
+
+        if sdp or sdp_mid:
+            msg.data.sdp = sdp
+            msg.data.sdp_mid = sdp_mid
+
+        self.sio.emit("webrtc", msg.SerializeToString())
 
     # --- Control Methods ---
 

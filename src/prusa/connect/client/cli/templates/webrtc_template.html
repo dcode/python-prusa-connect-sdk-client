@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Prusa Connect WebRTC Stream</title>
+    <!-- Use socket.io v4.7 client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- Use protobuf.js -->
+    <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.5/dist/protobuf.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #222;
+            color: #eee;
+            text-align: center;
+        }
+
+        video {
+            background: #000;
+            width: 100%;
+            max-width: 1024px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            object-fit: contain;
+        }
+
+        .controls {
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: none;
+            font-weight: bold;
+        }
+
+        #startBtn {
+            background-color: #f77f00;
+            color: white;
+        }
+
+        #stopBtn {
+            background-color: #888;
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Prusa Camera Stream</h2>
+    <div style="position: relative; display: inline-block;">
+        <video id="remoteVideo" autoplay playsinline muted controls></video>
+        <div id="statsOverlay" style="position: absolute; bottom: 40px; right: 10px; background: rgba(0, 0, 0, 0.7); color: lime; padding: 5px 10px; font-family: monospace; font-size: 14px; border-radius: 4px; pointer-events: none; display: none; z-index: 10;">
+            FPS: <span id="fps">-</span> | <span id="bitrate">-</span> kbps | <span id="resolution">-</span>
+        </div>
+    </div>
+    <div class="controls">
+        <button id="startBtn" onclick="startStream()">Start Stream</button>
+        <button id="stopBtn" onclick="stopStream()" disabled>Stop Stream</button>
+    </div>
+    <div id="status" style="margin-top: 15px; color: #ccc;">Ready to connect. Click "Start Stream".</div>
+
+    <script>
+        const CAMERA_TOKEN = "{{ CAMERA_TOKEN }}";
+        const JWT_TOKEN = "{{ JWT_TOKEN }}";
+        const SIGNALING_URL = "https://camera-signaling.prusa3d.com";
+        const FINGERPRINT = "python-sdk-browser";
+
+        // Embed the proto definition
+        const protoStr = `{{ PROTOBUF_DEFINITION }}`;
+
+        let pbRoot = null;
+        let pbAuth = null;
+        let pbTrigger = null;
+        let pbSignal = null;
+        let socket = null;
+        let peerConnection = null;
+        let pendingCandidates = [];
+        let pendingAnswer = null;
+        let isPeerConnectionReady = false;
+        let statsInterval = null;
+        let lastResult = null;
+
+        const updateStatus = (msg) => {
+            document.getElementById('status').innerText = msg;
+            console.log(msg);
+        };
+
+        function updateStats() {
+            if (!peerConnection) return;
+            peerConnection.getStats(null).then(stats => {
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        const bytes = report.bytesReceived;
+                        const fps = report.framesPerSecond !== undefined ? report.framesPerSecond : '-';
+                        const timestamp = report.timestamp;
+                        let resolution = '-';
+                        if (report.frameWidth && report.frameHeight) {
+                            resolution = `${report.frameWidth}x${report.frameHeight}`;
+                        }
+
+                        if (lastResult && lastResult.timestamp < timestamp) {
+                            const bitrate = 8 * (bytes - lastResult.bytesReceived) / (timestamp - lastResult.timestamp);
+                            document.getElementById('fps').innerText = typeof fps === 'number' ? Math.round(fps) : fps;
+                            document.getElementById('bitrate').innerText = Math.round(bitrate);
+                            document.getElementById('resolution').innerText = resolution;
+                        }
+
+                        lastResult = {
+                            bytesReceived: bytes,
+                            timestamp: timestamp
+                        };
+                    }
+                });
+            });
+        }
+
+        async function initProto() {
+            return new Promise((resolve, reject) => {
+                protobuf.parse.defaults.keepCase = true;
+                try {
+                    const parsed = protobuf.parse(protoStr);
+                    pbRoot = parsed.root;
+                    pbAuth = pbRoot.lookupType("prusa.camera.v2.ClientAuthentication");
+                    pbTrigger = pbRoot.lookupType("prusa.camera.v2.CameraTrigger");
+                    pbSignal = pbRoot.lookupType("prusa.camera.v2.WebRTCSignaling");
+                    resolve();
+                } catch (e) { reject(e); }
+            });
+        }
+
+        async function startStream() {
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            updateStatus("Initializing Protobuf...");
+            await initProto();
+
+            updateStatus("Connecting to Socket.IO at " + SIGNALING_URL + "...");
+            socket = io(SIGNALING_URL, {
+                auth: { token: CAMERA_TOKEN },
+                transports: ['websocket']
+            });
+
+            socket.on("connect", () => {
+                updateStatus("Connected! Authenticating Session...");
+                const authMsg = pbAuth.create({
+                    camera_token: CAMERA_TOKEN,
+                    client_type: "client",
+                    client_jwt_token: JWT_TOKEN
+                });
+                socket.emit("client_authentication", pbAuth.encode(authMsg).finish());
+
+                // Wait 500ms for auth to process, then send triggers and request CONFIG
+                setTimeout(() => {
+                    updateStatus("Sending Triggers...");
+                    const trigger1Msg = pbTrigger.create({ camera_token: CAMERA_TOKEN, get_status: 1 });
+                    const trigger2Msg = pbTrigger.create({ camera_token: CAMERA_TOKEN, get_features: 1 });
+                    socket.emit("trigger", pbTrigger.encode(trigger1Msg).finish());
+                    socket.emit("trigger", pbTrigger.encode(trigger2Msg).finish());
+
+                    updateStatus("Requesting WebRTC Config...");
+                    const configReqMsg = pbSignal.create({
+                        camera_token: CAMERA_TOKEN,
+                        session_id: socket.id,
+                        peer_id: socket.id,
+                        type: 1, // CONFIG
+                        direction: 2 // Client to Server
+                    });
+                    socket.emit("webrtc", pbSignal.encode(configReqMsg).finish());
+
+                }, 500);
+            });
+
+            socket.on("webrtc", async (data) => {
+                try {
+                    const msg = pbSignal.decode(new Uint8Array(data));
+                    if (msg.type === 3) { // wire type 3 is the camera's OFFER
+                        updateStatus("Received WebRTC SDP from Camera. Initializing PeerConnection...");
+                        console.log("-> msg.type === 3 (OFFER received)");
+
+                        // We rely on standard Google STUN
+                        let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+
+                        peerConnection = new RTCPeerConnection({ iceServers });
+                        peerConnection.onicecandidate = (event) => {
+                            if (event.candidate) {
+                                console.log("-> Local ICE Candidate gathered", event.candidate);
+                                // Send ICE candidate
+                                const candMsg = pbSignal.create({
+                                    camera_token: CAMERA_TOKEN,
+                                    session_id: socket.id,
+                                    peer_id: socket.id,
+                                    type: 4, // CANDIDATE
+                                    direction: 2, // Client to Server
+                                    data: {
+                                        sdp: event.candidate.candidate,
+                                        sdp_mid: event.candidate.sdpMid || "0"
+                                    }
+                                });
+                                socket.emit("webrtc", pbSignal.encode(candMsg).finish());
+                            }
+                        };
+
+                        peerConnection.ontrack = (event) => {
+                            updateStatus("Received video track!");
+                            console.log("-> Received track", event);
+                            const video = document.getElementById('remoteVideo');
+                            if (video.srcObject !== event.streams[0]) {
+                                video.srcObject = event.streams[0];
+                            }
+
+                            // Start stats overlay if not started
+                            if (!statsInterval) {
+                                document.getElementById('statsOverlay').style.display = 'block';
+                                statsInterval = setInterval(updateStats, 1000);
+                            }
+                        };
+
+                        // Add transceiver
+                        peerConnection.addTransceiver('video', { direction: 'recvonly' });
+
+                        console.log("-> Calling setRemoteDescription with OFFER SDP");
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                            type: 'offer',
+                            sdp: msg.data.sdp
+                        }));
+                        console.log("-> setRemoteDescription SUCCESS");
+
+                        // Create our Answer
+                        console.log("-> Calling createAnswer");
+                        const answer = await peerConnection.createAnswer();
+                        console.log("-> createAnswer SUCCESS", answer);
+
+                        console.log("-> Calling setLocalDescription");
+                        await peerConnection.setLocalDescription(answer);
+                        console.log("-> setLocalDescription SUCCESS");
+
+                        // Emit the Answer back to the camera
+                        updateStatus("Sending local SDP Answer to camera...");
+                        console.log("-> Emitting type: 2 (ANSWER) to camera");
+                        const ansMsg = pbSignal.create({
+                            camera_token: CAMERA_TOKEN,
+                            session_id: socket.id,
+                            peer_id: socket.id,
+                            type: 2, // wire type 2 is the camera's expected ANSWER
+                            direction: 2, // Client to server
+                            data: {
+                                sdp: answer.sdp
+                            }
+                        });
+                        socket.emit("webrtc", pbSignal.encode(ansMsg).finish());
+                        console.log("-> Emit complete!");
+
+                        isPeerConnectionReady = true;
+
+                        // Now we can safely add any queued candidates from the camera
+                        console.log("-> Checking pendingCandidates...", pendingCandidates.length);
+                        if (pendingCandidates.length > 0) {
+                            updateStatus(`Processing ${pendingCandidates.length} queued ICE Candidates...`);
+                            for (const cand of pendingCandidates) {
+                                console.log("-> Calling addIceCandidate for queued", cand);
+                                await peerConnection.addIceCandidate(new RTCIceCandidate({
+                                    candidate: cand.sdp,
+                                    sdpMid: cand.sdp_mid
+                                }));
+                            }
+                            pendingCandidates = [];
+                            console.log("-> Processed all queued candidates.");
+                        }
+
+                    } else if (msg.type === 4) { // CANDIDATE
+                        console.log("-> msg.type === 4 (CANDIDATE received)", msg.data);
+                        if (msg.data && msg.data.sdp) {
+                            if (isPeerConnectionReady && peerConnection.remoteDescription) {
+                                console.log("-> Ready! calling addIceCandidate directly");
+                                await peerConnection.addIceCandidate(new RTCIceCandidate({
+                                    candidate: msg.data.sdp,
+                                    sdpMid: msg.data.sdp_mid
+                                }));
+                            } else {
+                                console.log("-> Not ready, pushing to pendingCandidates");
+                                pendingCandidates.push(msg.data);
+                            }
+                        }
+                    } else {
+                        console.log("-> Ignored msg type: ", msg.type);
+                    }
+                } catch (e) {
+                    console.error("WebRTC Error:", e);
+                    console.error("Error processing webrtc message", e);
+                }
+            });
+
+            socket.on("disconnect", () => {
+                updateStatus("Disconnected from signaling server.");
+                stopStream();
+            });
+        }
+
+        function stopStream() {
+            isPeerConnectionReady = false;
+            pendingCandidates = [];
+            pendingAnswer = null;
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+            lastResult = null;
+            document.getElementById('statsOverlay').style.display = 'none';
+            document.getElementById('fps').innerText = '-';
+            document.getElementById('bitrate').innerText = '-';
+            document.getElementById('resolution').innerText = '-';
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            const video = document.getElementById('remoteVideo');
+            video.srcObject = null;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            updateStatus("Stream stopped.");
+        }
+    </script>
+</body>
+
+</html>
