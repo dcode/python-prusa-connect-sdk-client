@@ -34,6 +34,9 @@ class NetworkInfo(WarnExtraFieldsModel):
     ipv4: str | None = None
     ipv6: str | None = None
     mac: str | None = None
+    wifi_mac: str | None = None
+    wifi_ipv4: str | None = None
+    wifi_ipv6: str | None = None
     wifi_ssid: str | None = None
     lan_ipv4: str | None = None
     lan_mac: str | None = None
