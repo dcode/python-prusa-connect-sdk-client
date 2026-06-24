@@ -20,7 +20,7 @@ jobs:
     steps:
       # Checkout by exact SHA so we commit on top of what the lock job saw.
       - name: Checkout PR branch at workflow HEAD SHA
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           token: ${{ secrets.DEPENDABOT_PAT }}
